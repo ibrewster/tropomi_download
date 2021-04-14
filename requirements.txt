@@ -1,0 +1,16 @@
+python-dateutil
+arrow
+pycoast
+pytz
+numpy
+pyproj
+requests
+PySide2
+pyqtgraph
+psycopg2-binary
+shapely
+xarray
+dask[array]
+zarr
+h5netcdf
+netcdf4
