@@ -13,4 +13,5 @@ xarray
 dask[array]
 zarr
 h5netcdf
+h5py
 netcdf4

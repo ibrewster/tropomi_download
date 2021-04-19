@@ -21,6 +21,7 @@ import warnings
 from functools import partial
 from glob import glob
 
+import h5py
 import numpy
 import xarray
 
@@ -118,6 +119,103 @@ def _init_file_load_process(sig_queue, prog_queue, term_flag):
 
 
 def _load_file_data(file_def, filepath):
+    file_xa = xarray.Dataset()
+    h5_file = h5py.File(filepath, 'r')
+    # Find the latitude entry to get the data size
+    for group in file_def['GROUPS']:
+        for field in group['FIELDS']:
+            if field['NAME'] == 'latitude':
+                break
+        else:
+            # If we didn't find latitude in the previous group,
+            # move on to the next group
+            continue
+
+        break
+
+    try:
+        if field['NAME'] == 'latitude':
+            data_size = h5_file[group['GROUP']]['latitude'].size
+        else:
+            raise KeyError("Latitude not found in file def")
+    except KeyError as e:
+        # Path does not exist in file. Bad file, apparently
+        logging.error(str(e))
+        return {}
+
+    # Generate the time array
+    pt_group = file_def['INFO']['point_time']['GROUP']
+    pt_name = file_def['INFO']['point_time']['NAME']
+    point_time_data = numpy.asarray(h5_file[pt_group][pt_name])
+    point_time_data = point_time_data.flatten()
+
+    time_op = file_def['INFO']['point_time'].get('operation')
+    if time_op:
+        point_time_data = time_op(point_time_data)
+
+    file_time_group = file_def['INFO'].get('file_time', {}).get('GROUP')
+    if file_time_group:
+        file_time_name = file_def['INFO'].get('file_time', {}).get('NAME')
+        file_time_path = f"{file_time_group}/{file_time_name}"
+
+        file_time = h5_file[file_time_path][0]
+        file_time_op = file_def['INFO'].get('file_time', {}).get('operation')
+        if file_time_op:
+            file_time = file_time_op(file_time)
+
+        point_time_data = point_time_data + file_time  # Now an actual timestamp value
+
+    if point_time_data.size != data_size:
+        num_repeat = data_size / point_time_data.size
+        point_time_data = numpy.repeat(point_time_data, num_repeat)
+
+    file_xa.coords['datetime_start'] = ("time", point_time_data)
+
+    # Fetch desired data from file
+    for group, spec in ((g['GROUP'], f) for g in file_def['GROUPS'] for f in g['FIELDS']):
+        field = spec.get('DEST', spec['NAME'])
+
+        try:
+            kill = signaller.load_queue.get_nowait()
+        except (queue.Empty, AttributeError):
+            pass  # Nothng to get
+        else:
+            if kill:
+                _TERM_FLAG.set()
+
+        if _TERM_FLAG.is_set():
+            h5_file.close()
+            return {}
+
+        path = f"{group}/{spec['NAME']}"
+        field_data = numpy.asarray(h5_file[path])
+
+        isinstance(field_data, numpy.ndarray)
+        if 'operation' in spec:
+            field_data = spec['operation'](field_data)
+
+        flat_shape = (-1, *field_data.shape[file_def['INFO']['nDims']:])
+        field_data.shape = flat_shape
+
+        dim = ["time"]
+        if len(flat_shape) > 1:
+            dim.append('corners')
+
+        if field in ['latitude', 'longitude',
+                     'latitude_bounds', 'longitude_bounds']:
+            file_xa.coords[field] = (dim, field_data)
+        else:
+            file_xa[field] = (dim, field_data)
+
+        try:
+            _PROGRESS_QUEUE.put('PROGRESS')
+        except AttributeError:
+            pass
+
+    return file_xa
+
+
+def _load_file_data_xarray(file_def, filepath):
     raw_data = {}
 
     # with ThreadPoolExecutor() as pool:
@@ -137,12 +235,13 @@ def _load_file_data(file_def, filepath):
     if time_op:
         point_time_data = time_op(point_time_data)
 
-    file_time_group = file_def['INFO'].get('file_time', {}).get('GROUP')
-    file_time_name = file_def['INFO'].get('file_time', {}).get('NAME')
-    if file_time_group:
-        file_time = raw_data[file_time_group][file_time_name].data
-        # Find offset, as a timestamp
-        point_time_data = (point_time_data + file_time).astype(int) / 1e9
+    if point_time_data.dtype == numpy.dtype('timedelta64[ns]'):
+        file_time_group = file_def['INFO'].get('file_time', {}).get('GROUP')
+        file_time_name = file_def['INFO'].get('file_time', {}).get('NAME')
+        if file_time_group:
+            file_time = raw_data[file_time_group][file_time_name].data
+            # Find offset, as a timestamp
+            point_time_data = (point_time_data + file_time).astype(int) / 1e9
 
     data.coords['datetime_start'] = ('time', point_time_data)
 
@@ -175,7 +274,7 @@ def _load_file_data(file_def, filepath):
 
             _PROGRESS_QUEUE.put('PROGRESS')
 
-    return data
+    return data.rename(corner = "corners")
 
 
 def _progress_thread(final):
@@ -241,7 +340,7 @@ def _parse_filters(filters):
     return result
 
 
-class _CodaFile:
+class _NetCDFFile:
     _filter_ops = {
         ">": op.gt,
         ">=": op.ge,
@@ -788,9 +887,9 @@ class _CodaFile:
         return target_file
 
 
-_coda_file_instance = _CodaFile()
+_hdf_file_instance = _NetCDFFile()
 
-import_product = _coda_file_instance.import_product
+import_product = _hdf_file_instance.import_product
 
 if __name__ == "__main__":
     # Test code when calling this file directly. Feel free to modify to make
@@ -805,7 +904,7 @@ if __name__ == "__main__":
     num_lat = round((_lat_to - lat_from) / .06)
     num_lon = round((_lon_to - lon_from) / .06)
 
-    FILTER_STRING = 'latitude>50;bin_spatial(617,32,0.06,700,-181,0.1)'
+    FILTER_STRING = ''
 
     data = import_product(FILE, FILTER_STRING)
     print(data)

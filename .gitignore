@@ -2,3 +2,8 @@ bin
 lib
 pyvenv.cfg
 __pycache__
+config.py
+coda/
+downloadCache.db
+include/
+share/

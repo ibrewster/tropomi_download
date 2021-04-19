@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import numpy
 
 
@@ -8,28 +9,35 @@ def _s5p_validity(x):
     return numpy.round(x * 100)
 
 
+def _file_time(x):
+    # TROPOMI filetime is seconds since 2010-01-01 00:00:00
+    # Convert to a real timestamp for use
+    return x + datetime(2010, 1, 1, tzinfo=timezone.utc).timestamp()
+
+
 DEF = {
     'INFO': {
         'nDims': 3,
         'binRadius': 1.5e4,
         'file_time': {
-            'GROUP': 'PRODUCT',
+            'GROUP': '/PRODUCT',
             'NAME': "time",
+            'operation': _file_time,
         },
-        'point_time': {'GROUP': "PRODUCT",
+        'point_time': {'GROUP': "/PRODUCT",
                        'NAME': 'delta_time'
                        },
         'so2_template': {
-            'GROUP': 'PRODUCT/SUPPORT_DATA/DETAILED_RESULTS/',
+            'GROUP': '/PRODUCT/SUPPORT_DATA/DETAILED_RESULTS',
             'NAME_PREFIX': 'sulfurdioxide_total_vertical_column_',
-            'DEFAULT_GROUP': 'PRODUCT',
+            'DEFAULT_GROUP': '/PRODUCT',
             'DEFAULT_NAME': 'sulfurdioxide_total_vertical_column',
             'bin': True,
         },
     },
     'GROUPS': [
         {
-            'GROUP': 'PRODUCT',
+            'GROUP': '/PRODUCT',
             'FIELDS': [
                 {
                     'NAME': 'latitude',

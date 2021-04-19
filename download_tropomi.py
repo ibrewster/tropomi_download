@@ -14,7 +14,8 @@ import requests
 from requests.auth import HTTPBasicAuth
 
 import config
-from GenVolcView import main as sendVolcView
+from util import init_logging
+from VolcView import main as sendVolcView
 
 SHOW_PROGRESS = False
 
@@ -133,30 +134,7 @@ processinglevel:L2 AND processingmode:{PROCESS_FILTER}))',
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.DEBUG,
-                        format=config.LOG_FORMAT,
-                        filename=config.LOG_FILE,
-                        filemode='a')
-
-    # Logging handler to output to the console when running
-    ch = logging.StreamHandler()
-    ch.setLevel(config.LOG_CONSOLE_LEVEL)
-
-    # Logging handler to output to the log file
-    fh = logging.FileHandler(config.LOG_FILE)
-    fh.setLevel(config.LOG_FILE_LEVEL)
-
-    formatter = logging.Formatter(config.LOG_FORMAT)
-    ch.setFormatter(formatter)
-    fh.setFormatter(formatter)
-
-    logger = logging.getLogger('')
-    for h in logger.handlers:
-        logger.removeHandler(h)
-
-    logger.setLevel(logging.INFO)
-    logger.addHandler(ch)
-    logger.addHandler(fh)
+    init_logging()
 
     # this produces logging output, so don't import it until *after* we set up logging.
     from xarrayimport import import_product
