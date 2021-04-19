@@ -215,13 +215,13 @@ if __name__ == "__main__":
                 raise ValueError("No data in file within areas of interest")
 
         except ValueError as e:
-            logging.error("%s in file %s. Discarding.",
-                          str(e), file_name)
+            logging.warning("%s in file %s. Perminantly skipping.",
+                            str(e), file_name)
             os.unlink(file_name + ".download")
             # "touch" a placeholder file so we don't try to download this file again
             open(file_name + ".skipped", 'a').close()
         except Exception as e:
-            logging.exception("Failed to load file %s", file_name)
+            logging.exception("Failed to load file %s. Will try again later.", file_name)
             os.unlink(file_name + ".download")
             # Don't create a skipped file for this, since we don't know what
             # went wrong. That way we will try again later.

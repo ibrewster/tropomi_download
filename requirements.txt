@@ -1,5 +1,5 @@
 python-dateutil
-arrow
+pyresample
 pycoast
 pytz
 numpy
@@ -12,6 +12,4 @@ shapely
 xarray
 dask[array]
 zarr
-h5netcdf
 h5py
-netcdf4
