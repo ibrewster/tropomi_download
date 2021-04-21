@@ -189,6 +189,12 @@ def _load_file_data(file_def, filepath):
 
         path = f"{group}/{spec['NAME']}"
         field_data = numpy.asarray(h5_file[path])
+        fill_value = h5_file[path].attrs.get("_FillValue")
+        if fill_value is not None:
+            try:
+                field_data[field_data == fill_value] = numpy.nan
+            except ValueError:
+                pass
 
         isinstance(field_data, numpy.ndarray)
         if 'operation' in spec:
@@ -213,68 +219,6 @@ def _load_file_data(file_def, filepath):
             pass
 
     return file_xa
-
-
-def _load_file_data_xarray(file_def, filepath):
-    raw_data = {}
-
-    # with ThreadPoolExecutor() as pool:
-    for group in (x['GROUP']
-                  for x in file_def['GROUPS']):
-        da = xarray.open_dataset(filepath, group = group)
-        raw_data[group] = da
-
-    data = xarray.Dataset()
-
-    pt_group = file_def['INFO']['point_time']['GROUP']
-    pt_name = file_def['INFO']['point_time']['NAME']
-    point_time_data = raw_data[pt_group][pt_name].data
-    point_time_data = point_time_data.flatten()
-
-    time_op = file_def['INFO']['point_time'].get('OPERATION')
-    if time_op:
-        point_time_data = time_op(point_time_data)
-
-    if point_time_data.dtype == numpy.dtype('timedelta64[ns]'):
-        file_time_group = file_def['INFO'].get('file_time', {}).get('GROUP')
-        file_time_name = file_def['INFO'].get('file_time', {}).get('NAME')
-        if file_time_group:
-            file_time = raw_data[file_time_group][file_time_name].data
-            # Find offset, as a timestamp
-            point_time_data = (point_time_data + file_time).astype(int) / 1e9
-
-    data.coords['datetime_start'] = ('time', point_time_data)
-
-    for group_def in file_def['GROUPS']:
-        da = raw_data[group_def['GROUP']]
-        for field_def in group_def['FIELDS']:
-            try:
-                kill = signaller.load_queue.get_nowait()
-            except queue.Empty:
-                pass  # Nothng to get
-            else:
-                if kill == True:
-                    _TERM_FLAG.set()
-
-            if _TERM_FLAG.is_set():
-                return {}
-
-            name = field_def['NAME']
-            dest = field_def.get('DEST', name)
-
-            op = field_def.get('operation')
-            field_data = da[name].squeeze("time").stack(time=["scanline", "ground_pixel"]).reset_index('time')
-            if op:
-                field_data = op(field_data)
-
-            if dest in ['latitude', 'longitude', 'latitude_bounds', 'longitude_bounds']:
-                data.coords[dest] = field_data
-            else:
-                data[dest] = field_data
-
-            _PROGRESS_QUEUE.put('PROGRESS')
-
-    return data.rename(corner = "corners")
 
 
 def _progress_thread(final):
