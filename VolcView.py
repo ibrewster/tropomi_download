@@ -896,7 +896,7 @@ class DataFile:
                 cursor.connection.commit()
 
 
-def main(data_file, data_date = None, use_spawn=True):
+def main(data_file, use_spawn=True):
     """Load a data file and generate and upload VolcView
     images for any defined VolcView sectors covered by the data."""
     start = time.time()
@@ -907,7 +907,7 @@ def main(data_file, data_date = None, use_spawn=True):
     file_processor = DataFile(data_file)
     file_processor.use_spawn = use_spawn
     file_processor.process_data()
-    logging.info("Completed run in %d", time.time() - start)
+    logging.info("Completed run in %d seconds", time.time() - start)
     return
 
 
