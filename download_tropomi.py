@@ -240,7 +240,7 @@ if __name__ == "__main__":
                     os.unlink(link_file)
                 os.link(f"{file_name}.nc", link_file)
             # Generate volc view images
-            sendVolcView(f"{file_name}.nc", filetime)
+            sendVolcView(f"{file_name}.nc")
 
     with shelve.open(cache_location) as cache:
         cache['lastRun'] = date.today()

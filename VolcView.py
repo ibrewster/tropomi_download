@@ -1,5 +1,6 @@
 import config
 
+import argparse
 import gc
 import logging
 import json
@@ -218,7 +219,7 @@ def check_api(request_url):
     request_url : str
         The URL of the server to check for bands/types
     """
-    print("Checking for required bands/types")
+    logging.info(f"Checking for required bands/types on server {request_url}")
     required_types = ['TROPOMI', 'OMPS']
     required_bands = ['LowTrop', 'MidTrop', 'Cloud']
 
@@ -242,25 +243,25 @@ def check_api(request_url):
 
     for dtype in required_types:
         if dtype.lower() not in data_types:
-            print(f"Missing required type {dtype}. Adding.")
+            logging.warning(f"Missing required type {dtype}. Adding.")
             request = {'label': dtype,
                        'dataType': dtype.lower(), }
             res = requests.post(request_url + 'dataTypeApi/dataType',
                                 data=json.dumps(request),
                                 headers=headers)
-            print(res.status_code, res.text)
+            logging.info(f"Added with result: {res.status_code}, {res.text}")
 
     for band in required_bands:
         if band not in bands:
-            print(f"Missing required band {band}. Adding.")
+            logging.warning(f"Missing required band {band}. Adding.")
             request = {'label': band,
                        'band': band, }
             res = requests.post(request_url + 'bandApi/band',
                                 data=json.dumps(request),
                                 headers=headers)
-            print(res.status_code, res.text)
+            logging.info(f"Added with result: {res.status_code}, {res.text}")
 
-    print("All required bands/types created")
+    logging.info("All required bands/types created")
 
 
 class DataFile:
@@ -279,7 +280,7 @@ class DataFile:
     _proj_str = ''
     _laea_transformer = None
 
-    def __init__(self, data_file, file_date, sectors):
+    def __init__(self, data_file, sectors = config.VOLCVIEW_SECTORS):
         # Check some values
         if not isinstance(sectors, (list, tuple, dict)):
             raise TypeError(f"img_sectors must be a list of sectors or a single "
@@ -289,21 +290,26 @@ class DataFile:
         if isinstance(sectors, dict):
             sectors = (sectors, )
 
-        # File to generate images for
-        self._file = data_file
-        # Date/time of this file
-        self._file_date = file_date
         # Sectors to generate images for
         self._sectors = sectors
 
-        # Figure out the file type
+        # File to generate images for
+        self._file = data_file
+
+        # Figure out the file type and date
         self._file_name = data_file.split('/')[-1]
         if self._file_name[:4] == "S5P_":
             self._heights = ['1km', '7km']
             self._data_type = 'TROPOMI'
+            file_date_info = self._file_name.split("____")[1].split("_")[0]
+            file_date = datetime.strptime(file_date_info, "%Y%m%dT%H%M%S")
         elif self._file_name[:4] == "OMPS":
             self._heights = ['TRL', 'TRM']
             self._data_type = 'OMPS'
+            file_date_info = self._file_name.split("_")[3]
+            file_date = datetime.strptime(file_date_info, "%Ym%m%dt%H%M%S")
+
+        self._file_date = file_date.replace(tzinfo =pytz.UTC)
 
         # Initalize some constants
         self._du_color_map = pg.ColorMap([0, .05, .1, .175, .25, .99, 1],
@@ -618,8 +624,8 @@ class DataFile:
             warnings.simplefilter("ignore")
             scaled_coords = (shifted_coords * (1 / scale_factors[:, None, None])) - .5
         # "Center" the scaled coordinates so the paths correctly represent the points
-        scaled_coords -= (((numpy.max(scaled_coords, axis=1) -
-                            numpy.min(scaled_coords, axis=1)) - 1) / 2)[:, None, :]
+        scaled_coords -= (((numpy.max(scaled_coords, axis=1)
+                            - numpy.min(scaled_coords, axis=1)) - 1) / 2)[:, None, :]
 
         pixel_paths = [_generate_path(x) for x in scaled_coords]
 
@@ -890,18 +896,15 @@ class DataFile:
                 cursor.connection.commit()
 
 
-def main(data_file, data_date, use_spawn=True):
+def main(data_file, data_date = None, use_spawn=True):
     """Load a data file and generate and upload VolcView
     images for any defined VolcView sectors covered by the data."""
-#     if DEBUG:
-#         from . import wingdbstub
-
     start = time.time()
     # Convert volcview sector definitions to our "native" format
     _gen_sector_bounds(config.VOLCVIEW_SECTORS)  # "converts" in-place.
 
     logging.info("Generating images")
-    file_processor = DataFile(data_file, data_date, config.VOLCVIEW_SECTORS)
+    file_processor = DataFile(data_file)
     file_processor.use_spawn = use_spawn
     file_processor.process_data()
     logging.info("Completed run in %d", time.time() - start)
@@ -909,13 +912,24 @@ def main(data_file, data_date, use_spawn=True):
 
 
 if __name__ == "__main__":
-    """For debug/testing/one-off runs. Not used in normal operation.
-    Feel free to modify for your own use/testing purposes"""
-    FILE = "/Users/israel/Desktop/Data/test_tropomi/S5P_NRTI_L2__SO2____20200625T001925_20200625T002425_13983_01_010108_20200625T010642.nc"
+    init_logging()
+    parser = argparse.ArgumentParser(description = "TROPOMI interface to VolcView")
+    parser.add_argument("files", nargs = "*", default = [],
+                        help = "TROPOMI data files to generate and upload VolcView images for")
+    parser.add_argument("-c", "--check", dest = "check", action='store_const',
+                        help = "Check VolcView servers for the required bands/types, creating if needed",
+                        const = True, default = False)
 
-    FILE_DATE = datetime(2020, 6, 25, 0, 19, 25, tzinfo=pytz.UTC)
+    args = parser.parse_args()
+    if not args.check and not args.files:
+        print("No files specified and not checking server. Nothing to do.")
+        exit(1)
 
-    # FILE = '/Volumes/Transfer/OMPS/2019-10-23/OMPS-NPP_NMSO2-PCA-L2_v1.1_2019m1023t003114_o00001_2019m1023t005116.h5'
-    # FILE_DATE = datetime(2019, 10, 23, 0, 31, 14, tzinfo=pytz.UTC)
+    if args.check:
+        for URL in config.VOLCVIEW_SERVERS:
+            check_api(URL)
 
-    main(FILE, FILE_DATE)
+    for file in args.files:
+        main(file)
+
+    exit(0)

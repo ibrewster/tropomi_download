@@ -14,3 +14,6 @@ proj.directory-list = [{'dirloc': loc('.'),
                         'recursive': True,
                         'watch_for_changes': True}]
 proj.file-type = 'shared'
+proj.launch-config = {loc('VolcView.py'): ('project',
+        (u'-c /Users/israel/Desktop/Data/test_tropomi/S5P_NRTI_L2__SO2____20200625T001925_20200625T002425_13983_01_010108_20200625T010642.nc',
+         ''))}
