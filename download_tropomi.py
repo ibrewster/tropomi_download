@@ -137,7 +137,7 @@ if __name__ == "__main__":
     init_logging()
 
     # this produces logging output, so don't import it until *after* we set up logging.
-    from xarrayimport import import_product
+    from h5pyimport import import_product
 
     logging.info("Begining download on %s", date.today())
 

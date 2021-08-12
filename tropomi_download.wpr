@@ -1,23 +1,23 @@
 #!wing
-#!version=7.0
+#!version=8.0
 ##################################################################
 # Wing project file                                              #
 ##################################################################
 [project attributes]
 proj.directory-list = [{'dirloc': loc('.'),
-                        'excludes': [u'bin',
-                                     u'lib',
-                                     u'coda',
-                                     u'pyvenv.cfg',
-                                     u'share',
-                                     u'gshhg',
-                                     u'downloadCache.db',
-                                     u'include'],
+                        'excludes': ['bin',
+                                     'lib',
+                                     'coda',
+                                     'pyvenv.cfg',
+                                     'share',
+                                     'gshhg',
+                                     'downloadCache.db',
+                                     'include'],
                         'filter': '*',
                         'include_hidden': False,
                         'recursive': True,
                         'watch_for_changes': True}]
 proj.file-type = 'shared'
 proj.launch-config = {loc('VolcView.py'): ('project',
-        (u'-c /Users/israel/Desktop/Data/test_tropomi/S5P_NRTI_L2__SO2____20200625T001925_20200625T002425_13983_01_010108_20200625T010642.nc',
+        ('-c /Users/israel/Desktop/Data/test_tropomi/S5P_NRTI_L2__SO2____20200625T001925_20200625T002425_13983_01_010108_20200625T010642.nc',
          ''))}

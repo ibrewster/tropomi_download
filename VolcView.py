@@ -48,7 +48,7 @@ from PySide2.QtCore import (QSize,
 
 
 from GradientScale import GradientWidget
-from xarrayimport import import_product
+from h5pyimport import import_product
 from util import init_logging
 
 DEBUG = False
@@ -389,7 +389,9 @@ class DataFile:
 
                 sector_processes.append(sector_result)
                 logging.debug("Process Status: %r", not sector_result.ready())
-        pool.close()
+        if not DEBUG:
+            pool.close()
+
         for idx, proc in enumerate(sector_processes):
             logging.debug("Waiting for process %i to complete", idx)
             for cnt in range(12):
@@ -400,7 +402,8 @@ class DataFile:
             else:
                 logging.warning("Image generation process failed to complete after 60 seconds. Will be terminated.")
         # All processes have either ended or timed-out. Terminate any remaining
-        pool.terminate()
+        if not DEBUG:
+            pool.terminate()
 
     def _load_data(self, height=None, validity=None, **kwargs):
         filters = [
@@ -587,11 +590,11 @@ class DataFile:
         areas = PolyArea(sector_data['x_laea'],
                          sector_data['y_laea'])
 
-        mass = areas * sector_data['SO2_column_number_density'].astype(float)  # in moles
+        mass = areas * sector_data['SO2_column_number_density']  # in moles
         mass *= 64  # in grams
         total_mass = numpy.nansum(mass) * 1e-9  # Kilo Tonnes
 
-        self._du_val = sector_data['SO2_column_number_density'].astype(float) * 2241.15  # Conversion Factor from manual
+        self._du_val = sector_data['SO2_column_number_density'] * 2241.15  # Conversion Factor from manual
         self._normalized_du = self._du_val * (1 / 20)
         self._normalized_du[self._normalized_du > 1] = 1
         self._normalized_du[self._normalized_du < 0] = 0
@@ -624,8 +627,8 @@ class DataFile:
             warnings.simplefilter("ignore")
             scaled_coords = (shifted_coords * (1 / scale_factors[:, None, None])) - .5
         # "Center" the scaled coordinates so the paths correctly represent the points
-        scaled_coords -= (((numpy.max(scaled_coords, axis=1)
-                            - numpy.min(scaled_coords, axis=1)) - 1) / 2)[:, None, :]
+        scaled_coords -= (((numpy.max(scaled_coords, axis=1) -
+                            numpy.min(scaled_coords, axis=1)) - 1) / 2)[:, None, :]
 
         pixel_paths = [_generate_path(x) for x in scaled_coords]
 
@@ -743,7 +746,11 @@ class DataFile:
 
             # Don't send the image to volcview unless it has at least 15% coverage.
             # Allow 2% for the scale bar and other features.
-            if covered_percent > .17:
+            threshold = .17
+            if sector['pixelSize'] == 5:
+                threshold = .06
+
+            if covered_percent > threshold:
                 self._add_coastlines(pil_img)
 
                 raw_data = QByteArray()

@@ -1,7 +1,7 @@
 """
-codaimport.py - Functions for loading data from NetCDF files using the coda
+h5pyimport.py - Functions for loading data from NetCDF files using the coda
     library
-Copyright © 2020 Alaska Volcano Observatory
+Copyright © 2021 Alaska Volcano Observatory
 Distributed under MIT license. See license.txt for more information
 """
 import gc
@@ -27,28 +27,54 @@ import xarray
 
 from pyresample import bilinear, geometry, create_area_def
 
+
 if 'PySide2.QtWidgets' in sys.modules:
-    from PySide2.QtCore import (QObject,
-                                Signal)
+    from PySide2.QtCore import (
+        QThread,
+        Signal,
+    )
 else:
     logging.warning("PySide2 not found. Not reporting progress.")
 
-    class QObject:
-        """Dummy class so we can have a single definition of _Signaller"""
+    class QThread:
+        """
+        If PySide2 is not being used, replicate the functionality of a
+        QThread object using native python code so we can get the same
+        functionality, and use the same code.
+        """
+
+        def __init__(self, parent = None):
+            self._thread = None
+
+        def run(self):
+            pass  # placeholder. Override in child class to actually do something.
+
+        def start(self):
+            self._thread = threading.Thread(target = self.run,
+                                            daemon = True)
+            self._thread.start()
+
+        def wait(self, timeout = None):
+            return self._thread.join(timeout)
+
+        def isRunning(self):
+            if self._thread is None:
+                return False
+
+            return self._thread.isAlive()
 
     class Signal:
         """
             Signal implementation that behaves somewhat simularly to the Qt
             signal/slot implemention, but without using Qt.
         """
-        _callbacks = []
-        _types = None
 
         def __init__(self, *args):
             """
                 Initalize the signal with a list of expected arg types
             """
             self._types = args
+            self._callbacks = []
 
         def connect(self, fcn):
             """
@@ -66,34 +92,67 @@ else:
                 callback(*args)
 
 
-class _Signaller(QObject):
+class _Signaller(QThread):
+    """
+    Signal handler to mediate/pass messages between the
+    loading process and the main application.
+    """
     progress = Signal(float)
     status = Signal(str, int, int)
     load_queue = None
+    _instance = None
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._final = 0
+
+    def set_final(self, final):
+        self._final = final
+
+    def run(self):
+        prog = 0
+        while True:
+            try:
+                msg = _PROGRESS_QUEUE.get(timeout=.25)
+            except queue.Empty:
+                if _TERM_FLAG.is_set():
+                    logging.debug("Exiting progress thread due to cancel")
+                    break
+            else:
+                if msg == "QUIT":
+                    logging.debug("Exiting progress thread due to QUIT")
+                    break
+                if msg == 'PROGRESS':
+                    prog += 1
+                    self.progress.emit((prog / self._final) * 100)
+                if isinstance(msg, (list, tuple)) and msg[0] == 'STATUS':
+                    self.status.emit(msg[1], -1, 0)
 
 
 # We need a QObject instance in order to be able to dispatch Qt Signals
 signaller = _Signaller()
 
-_FILE_DEFS = {}
-_file_def = {}
-_file_type = None
 
-# Get a list of .py files from the file_formats directory adjacent to this file.
-# These files contain definitions of how to import data from various file types
-# into the format we expect.
-# File definition files MUST contain a __TYPE__ variable, which is the first
-# four characters of the file name for the files it handles, and a DEF
-# dictionary containing the import parameters (fields, info, etc)
-FORMAT_DIR = os.path.join(os.path.dirname(__file__),
-                          'file_formats')
-formats = [x[:-3] for x in os.listdir(FORMAT_DIR)
-           if x.endswith('.py')]
+def _load_formats():
+    # Get a list of .py files from the file_formats directory adjacent to this file.
+    # These files contain definitions of how to import data from various file types
+    # into the format we expect.
+    # File definition files MUST contain a __TYPE__ variable, (typically the first
+    # four characters of the file name for the files it handles), and a DEF
+    # dictionary containing the import parameters (fields, info, etc)
+    file_defs = {}
 
-# Load all file formats found in the formats directory
-for fmt in formats:
-    module = importlib.import_module(f'file_formats.{fmt}')
-    _FILE_DEFS[module.__TYPE__] = module.DEF
+    FORMAT_DIR = os.path.join(os.path.dirname(__file__),
+                              'file_formats')
+    formats = [x[:-3] for x in os.listdir(FORMAT_DIR)
+               if x.endswith('.py')]
+
+    # Load all file formats found in the formats directory
+    for fmt in formats:
+        module = importlib.import_module(f'file_formats.{fmt}')
+        file_defs[module.__TYPE__] = module.DEF
+
+    return file_defs
 
 
 _PROGRESS_QUEUE = None
@@ -122,9 +181,11 @@ def _load_file_data(file_def, filepath):
     file_xa = xarray.Dataset()
     h5_file = h5py.File(filepath, 'r')
     # Find the latitude entry to get the data size
+    field = {}  # Make the linter happy by making sure these are defined.
+    group = {}
     for group in file_def['GROUPS']:
         for field in group['FIELDS']:
-            if field['NAME'] == 'latitude':
+            if field.get('DEST', field['NAME']) == 'latitude':
                 break
         else:
             # If we didn't find latitude in the previous group,
@@ -134,13 +195,15 @@ def _load_file_data(file_def, filepath):
         break
 
     try:
-        if field['NAME'] == 'latitude':
-            data_size = h5_file[group['GROUP']]['latitude'].size
+        if field.get('DEST', field['NAME']) == 'latitude':
+            group_name = group['GROUP']
+            field_name = field['NAME']
+            data_size = h5_file[f"/{group_name}/{field_name}"].size
         else:
             raise KeyError("Latitude not found in file def")
-    except KeyError as e:
+    except KeyError as err:
         # Path does not exist in file. Bad file, apparently
-        logging.error(str(e))
+        logging.error(str(err))
         return {}
 
     # Generate the time array
@@ -172,7 +235,8 @@ def _load_file_data(file_def, filepath):
     file_xa.coords['datetime_start'] = ("time", point_time_data)
 
     # Fetch desired data from file
-    for group, spec in ((g['GROUP'], f) for g in file_def['GROUPS'] for f in g['FIELDS']):
+    group_spec = ((g['GROUP'], f) for g in file_def['GROUPS'] for f in g['FIELDS'])
+    for group, spec in group_spec:
         field = spec.get('DEST', spec['NAME'])
 
         try:
@@ -189,7 +253,7 @@ def _load_file_data(file_def, filepath):
 
         path = f"{group}/{spec['NAME']}"
         field_data = numpy.asarray(h5_file[path])
-        fill_value = h5_file[path].attrs.get("_FillValue")
+        fill_value = h5_file[path].fillvalue
         if fill_value is not None:
             try:
                 field_data[field_data == fill_value] = numpy.nan
@@ -219,26 +283,6 @@ def _load_file_data(file_def, filepath):
             pass
 
     return file_xa
-
-
-def _progress_thread(final):
-    progress = 0
-    while True:
-        try:
-            msg = _PROGRESS_QUEUE.get(timeout=.25)
-        except queue.Empty:
-            if _TERM_FLAG.is_set():
-                logging.debug("Exiting progress thread due to cancel")
-                break
-        else:
-            if msg == "QUIT":
-                logging.debug("Exiting progress thread due to QUIT")
-                break
-            if msg == 'PROGRESS':
-                progress += 1
-                signaller.progress.emit((progress / final) * 100)
-            if isinstance(msg, (list, tuple)) and msg[0] == 'STATUS':
-                signaller.status.emit(msg[1], -1, 0)
 
 
 def _parse_filters(filters):
@@ -284,7 +328,7 @@ def _parse_filters(filters):
     return result
 
 
-class _NetCDFFile:
+class NetCDFFile:
     _filter_ops = {
         ">": op.gt,
         ">=": op.ge,
@@ -293,10 +337,76 @@ class _NetCDFFile:
         "<": op.lt,
     }
 
-    _file_data = None
-    _file_idxs = []
+    _FILE_DEFS = _load_formats()
 
-    def import_product(self, files, filters=None, options=None):
+    def __init__(self, files = None):
+        self._files = []
+        self._file_data = None
+        self._file_idxs = []
+        self._file_type = None
+        self._file_def = None
+        if files is not None:
+            self.configure(files)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args, **kwargs):
+        del self._file_data
+        self._file_data = None
+
+    def configure(self, files):
+        """
+        PARAMETERS
+        ----------
+        files : str or list
+                If str, the file to import. If list, a list of files to import
+        """
+        if not isinstance(files, (list, tuple)):
+            files = [files]
+
+        # Process wildcards in filenames
+        self._files = []
+        for filespec in files:
+            if "*" in filespec or "?" in filespec:
+                self._files += glob(filespec)
+            else:
+                self._files.append(filespec)
+
+        with h5py.File(self._files[0], 'r') as f:
+            for ftype, fdef in self._FILE_DEFS.items():
+                ident_attr = fdef.get('INFO', {}).get('ident_attr', {}).get('NAME')
+                if ident_attr is None:
+                    continue
+                ident_val = fdef.get('INFO', {}).get('ident_attr', {}).get('VALUE')
+                if f.attrs.get(ident_attr) == ident_val:
+                    break
+            else:
+                raise TypeError("Unable to identify file type")
+
+            # Look for the identifying attr.
+            # We key off the first four characters of the file name. Scary, but file names are documented, so...
+
+        self._file_type = ftype
+        self._file_def = fdef
+
+        self._fields = [
+            fld.get('DEST', fld['NAME'])
+            for fld_lst in self._file_def['GROUPS']
+            for fld in fld_lst['FIELDS']
+        ]
+
+        # Get a list of fields that need binned
+        self._to_bin = [
+            fld.get('DEST', fld['NAME'])
+            for fld_lst in self._file_def['GROUPS']
+            for fld in fld_lst['FIELDS']
+            if fld.get('bin', True)
+        ]
+
+        return self._file_type
+
+    def import_data(self, filters=None, options=None):
         """
             Main function of this class, given a list of files, filters, and
             options, import the data from the specified file(s) into a
@@ -304,8 +414,6 @@ class _NetCDFFile:
 
             Parameters
             ----------
-            files : str or list
-                If str, the file to import. If list, a list of files to import
             filters : str
                 A semi-colon delimited list of filters to apply to the data on
                 import. Can be either in the form field-bool-value or a special
@@ -331,17 +439,6 @@ class _NetCDFFile:
             self._file_data = None
             gc.collect()
 
-        if not isinstance(files, (list, tuple)):
-            files = [files]
-
-        # Process wildcards in filenames
-        _files = []
-        for filedef in files:
-            if "*" in filedef or "?" in filedef:
-                _files += glob(filedef)
-            else:
-                _files.append(filedef)
-
         # Parse out the options
         if options is None:
             _options = {}
@@ -352,22 +449,9 @@ class _NetCDFFile:
 
         so2_column = _options.get('so2_column')
 
-        # get the file def for this file type
-        global _file_def
-        global _file_type
-        # We key off the first four characters of the file name. Scary, but file names are documented, so...
-        file_name = _files[0].split('/')[-1]
-        _file_type = file_name[:4]
-        _file_def = _FILE_DEFS[_file_type]
-        self._fields = [
-            fld.get('DEST', fld['NAME'])
-            for lst in _file_def['GROUPS']
-            for fld in lst['FIELDS']
-        ]
-
         # Set the path to the proper SO2 product depending on filter entered (if any)
         # get the SO2 template
-        template = _file_def['INFO']['so2_template']
+        template = self._file_def['INFO']['so2_template']
 
         if so2_column is None:
             so2_group = template['DEFAULT_GROUP']
@@ -378,20 +462,22 @@ class _NetCDFFile:
             so2_name = f"{prefix}{so2_column}"
 
         so2_field = {
-            'GROUP': so2_group,
             'NAME': so2_name,
-            'bin': template['bin'],
+            'bin': template.get('bin', True),
             'DEST': 'SO2_column_number_density',
         }
 
+        if 'operation' in template:
+            so2_field['operation'] = template['operation']
+
         # find group index
-        for idx, group in enumerate([x['GROUP'] for x in _file_def['GROUPS']]):
+        for idx, group in enumerate([x['GROUP'] for x in self._file_def['GROUPS']]):
             if group == so2_group:
                 break
         else:
             idx = None
 
-        _file_def['GROUPS'][idx]['FIELDS'].append(so2_field)
+        self._file_def['GROUPS'][idx]['FIELDS'].append(so2_field)
 
         # Parse the filter string (if any)
         if filters is None:
@@ -412,21 +498,22 @@ class _NetCDFFile:
 
         # Concatenate data from all files into a single data structure
         field_count = len(self._fields)
-        total_steps = field_count * len(_files) + len(_files) + len(filters)
+        total_steps = field_count * len(self._files) + len(self._files) + len(filters)
 
         # From here on, we need to make sure this thread is told to quit at any point we
         # might exit this function, whether due to error or intent.
-        progress_thread = threading.Thread(target = _progress_thread, args = (total_steps, ))
-        progress_thread.start()
+        signaller.set_final(total_steps)
+        if not signaller.isRunning():
+            signaller.start()
 
         try:
             # Estimate array size
-            load_file_data = partial(_load_file_data, _file_def)
-            num_files = len(_files)
+            load_file_data = partial(_load_file_data, self._file_def)
+            num_files = len(self._files)
 
             if num_files == 1:
                 # No sense in doing multiprocessing if there is only one file to load.
-                all_data = [load_file_data(_files[0])]
+                all_data = [load_file_data(self._files[0])]
             else:
                 process_count = 3
                 # Use multiprocessing if we can, otherwise use a thread pool.
@@ -442,7 +529,7 @@ class _NetCDFFile:
                     # Use threads (multiprocessing.dummy)
                     pool = mpd.Pool(process_count)
 
-                all_data = pool.imap(load_file_data, _files)
+                all_data = pool.imap(load_file_data, self._files)
                 pool.close()
 
             self._file_idxs = []
@@ -454,7 +541,9 @@ class _NetCDFFile:
                     except UnboundLocalError:
                         pass  # not using a pool
 
-                    progress_thread.join()  # also make sure our progress thread is dead.
+                    signaller.wait(200)  # also make sure our progress thread is dead.
+                    if signaller.isRunning():
+                        signaller.terminate()
                     del _PROGRESS_QUEUE
                     del signaller.load_queue
                     logging.warning("Exiting load thread due to cancel")
@@ -500,7 +589,7 @@ class _NetCDFFile:
 
             if self._file_data is None or 'latitude' not in self._file_data:
                 _PROGRESS_QUEUE.put("QUIT")
-                progress_thread.join()  # wait for exit
+                signaller.wait()  # wait for exit
                 return {}  # No data matching filters in these files
 
             signaller.status.emit("Applying Filters...", -1, 0)
@@ -521,7 +610,7 @@ class _NetCDFFile:
                 # In case it was set elsewhere
                 if _TERM_FLAG.is_set():
                     _PROGRESS_QUEUE.put("QUIT")
-                    progress_thread.join()  # wait for exit
+                    signaller.wait()  # wait for exit
                     return {}
 
                 # Two types of filters: function filters like bin_spatial()
@@ -543,7 +632,7 @@ class _NetCDFFile:
                 _PROGRESS_QUEUE.put('PROGRESS')
 
             _PROGRESS_QUEUE.put("QUIT")
-            progress_thread.join()  # wait for exit
+            signaller.wait()  # wait for exit
 
             # In case it was set elsewhere
             if _TERM_FLAG.is_set():
@@ -556,7 +645,7 @@ class _NetCDFFile:
             # set the term flag as well, just to make sure the message gets through.
             # Probably overkill.
             _TERM_FLAG.set()
-            progress_thread.join()  # wait for exit
+            signaller.wait()  # wait for exit
             raise
 
         return self._file_data
@@ -699,8 +788,7 @@ class _NetCDFFile:
         if isinstance(proj, str):
             proj = pickle.loads(bytes.fromhex(proj))
 
-        proj_dict = proj if proj is not None else {'proj': 'lonlat', 'over': True, 'preserve_units': False, }
-
+        proj_dict = proj if proj else {'proj': 'lonlat', 'over': True, 'preserve_units': False, }
         target_def = create_area_def("Binned", proj_dict, area_extent=area_extent,
                                      shape=(num_lat, num_lon))
 
@@ -725,21 +813,8 @@ class _NetCDFFile:
 
         # Pre-allocate memory for final result
         binned_file_data = None
-#         num_files = len(self._file_idxs)
-#         binned_size = target_def.shape
 
-#         # Pre-allocate the memory for the binned data to live in.
-#         for key in self._file_data:
-#             if (key in _file_def['fields'] and _file_def['fields'][key]['bin']) or key in ['latitude', 'longitude']:
-#                 binned_file_data[key] = numpy.zeros((num_files, *binned_size))
-#             elif key in ['latitude_bounds', 'longitude_bounds']:
-#                 binned_file_data[key] = numpy.zeros((num_files, *binned_size, 4))
-#             else:
-#                 binned_file_data[key] = numpy.zeros((num_files, ))
-#
-#         # Add the datetime_length field for binned data
-#         binned_file_data['datetime_length'] = numpy.zeros((num_files, ))
-
+        results = []
         for file_idx, stop in enumerate(self._file_idxs):
             try:
                 kill = signaller.load_queue.get_nowait()
@@ -752,16 +827,16 @@ class _NetCDFFile:
             if _TERM_FLAG.is_set():
                 return
 
-            signaller.status.emit(f"Stacking Data ({file_idx}/{len(self._file_idxs)})...",
-                                  file_idx, len(self._file_idxs))
-
             if file_idx == 0:
                 start = 0
             else:
                 start = self._file_idxs[file_idx - 1]
 
-            binned_data = self._bin_file((start, stop), target_def)
+            results.append(self._bin_file((start, stop), target_def))
 
+        for idx, binned_data in enumerate(results):
+            signaller.status.emit(f"Stacking Data ({idx}/{len(self._file_idxs)})...",
+                                  idx, len(self._file_idxs))
             binned_data.coords['latitude'] = (('x', 'y'), target_lats)
             binned_data.coords['longitude'] = (('x', 'y'), target_lons)
             binned_data.coords['latitude_bounds'] = (('x', 'y', 'corners'), lats)
@@ -777,14 +852,18 @@ class _NetCDFFile:
     def _bin_file(self, src_range, target_def):
         source_def = geometry.SwathDefinition(lons=self._file_data['longitude'][src_range[0]:src_range[1]],
                                               lats=self._file_data['latitude'][src_range[0]:src_range[1]])
-
         nan_slice = False
 
         try:
             with warnings.catch_warnings():
                 warnings.filterwarnings('ignore')
-                radius = _file_def.get('info', {}).get('binRadius', 5e4)
-                t_params, s_params, input_idxs, idx_ref = bilinear.get_bil_info(source_def, target_def, radius=radius)
+                radius = self._file_def.get('INFO', {}).get('binRadius', 5e4)
+                (t_params,
+                 s_params,
+                 input_idxs,
+                 idx_ref) = bilinear.get_bil_info(source_def,
+                                                  target_def,
+                                                  radius=radius)
             # valid_input_index, valid_output_index, index_array, distance_array = \
             #    kd_tree.get_neighbour_info(source_def, target_def, 5000, neighbours=1)
         except (IndexError, ValueError):
@@ -794,15 +873,9 @@ class _NetCDFFile:
         # create target file data
         target_file = xarray.Dataset()
 
-        # Get a list of fields that need binned
-        to_bin = [
-            x.get('DEST', x['NAME'])
-            for y in _file_def['GROUPS']
-            for x in y['FIELDS']
-            if x.get('bin', True)
-        ]
         # rebin any data needing rebinned.
-        for key in [key for key in self._file_data if key in to_bin]:
+        all_keys = [key for key in self._file_data if key in self._to_bin]
+        for key in all_keys:
             if nan_slice:
                 binned_data = numpy.full(target_def.shape, numpy.nan,
                                          dtype=float,)
@@ -817,7 +890,6 @@ class _NetCDFFile:
             if len(binned_data.shape) == 3:
                 dim += ('corners')
             target_file[key] = (dim, binned_data)
-#            target_file[key] = binned_data
 
         # Figure the start and duration of this file
         # Don't assume sorted, though probably is
@@ -831,9 +903,10 @@ class _NetCDFFile:
         return target_file
 
 
-_hdf_file_instance = _NetCDFFile()
+def import_product(files, filters=None, options=None):
+    with NetCDFFile(files) as file:
+        return file.import_data(filters, options)
 
-import_product = _hdf_file_instance.import_product
 
 if __name__ == "__main__":
     # Test code when calling this file directly. Feel free to modify to make

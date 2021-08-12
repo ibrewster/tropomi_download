@@ -5,27 +5,38 @@ import numpy
 __TYPE__ = 'S5P_'
 
 
-def _s5p_validity(x):
-    return numpy.round(x * 100)
+def pointtime_offset(x):
+    """
+    The pointtime field in TROPOMI data is milliseconds
+    since file reference time, convert to seconds.
+    """
+    return x / 1000
 
 
 def _file_time(x):
-    # TROPOMI filetime is seconds since 2010-01-01 00:00:00
-    # Convert to a real timestamp for use
+    """
+    TROPOMI filetime is seconds since 2010-01-01 00:00:00
+    Convert to a real timestamp for use
+    """
     return x + datetime(2010, 1, 1, tzinfo=timezone.utc).timestamp()
 
 
 DEF = {
     'INFO': {
+        'ident_attr': {'NAME': 'sensor',
+                       'VALUE': b'TROPOMI'},
         'nDims': 3,
         'binRadius': 1.5e4,
+        'grid_x_resolution': 6660,  # In meters
+        'grid_y_resolution': 6660,
         'file_time': {
             'GROUP': '/PRODUCT',
             'NAME': "time",
             'operation': _file_time,
         },
         'point_time': {'GROUP': "/PRODUCT",
-                       'NAME': 'delta_time'
+                       'NAME': 'delta_time',
+                       'operation': pointtime_offset,
                        },
         'so2_template': {
             'GROUP': '/PRODUCT/SUPPORT_DATA/DETAILED_RESULTS',
@@ -51,7 +62,6 @@ DEF = {
                     'NAME': 'qa_value',
                     'DEST': 'SO2_column_number_density_validity',
                     'bin': False,
-                    'operation': _s5p_validity,
                 }
             ],
         },
