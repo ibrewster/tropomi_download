@@ -785,6 +785,13 @@ class DataFile:
                 date_label.grab().save(buffer, "PNG")
                 buffer.close()
 
+                # Save an archive image
+                logging.debug("Saving archive image for %s", band)
+                filename = f"{self._file_date.strftime('%Y_%m_%d_%H%M%S')}-{band}-{self._data_type}.png"
+                save_file = os.path.join(config.FILE_BASE, 'VolcView', sector['name'], filename)
+                os.makedirs(os.path.dirname(save_file), exist_ok = True)
+                pil_img.save(save_file, format = 'PNG')
+
                 img_stream = BytesIO(raw_data)
                 with Image.open(img_stream) as img:
                     pil_img.paste(img,
@@ -801,7 +808,7 @@ class DataFile:
                     self._volcview_upload(file_stream, sector, band)
                 else:
                     logging.debug("******Pretending to send to volc view")
-                    filename = f"{band}-{self._data_type}-{self._file_date.strftime('%Y_%m_%d_%H%M%S')}-{sector['name']}.png"
+
                     print("TEST UPLOAD", sector['name'], filename, "***200***")
 
                 logging.debug("Image upload complete")
