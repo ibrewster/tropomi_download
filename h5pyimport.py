@@ -209,7 +209,13 @@ def _load_file_data(file_def, filepath):
     # Generate the time array
     pt_group = file_def['INFO']['point_time']['GROUP']
     pt_name = file_def['INFO']['point_time']['NAME']
+    from_name = file_def['INFO']['point_time'].get('from_name')
     point_time_data = numpy.asarray(h5_file[pt_group][pt_name])
+    if from_name:
+        filename = os.path.basename(filepath)
+        point_time = from_name(filename)
+        point_time_data = numpy.full(point_time_data.shape, point_time)
+
     point_time_data = point_time_data.flatten()
 
     time_op = file_def['INFO']['point_time'].get('operation')
@@ -912,7 +918,8 @@ if __name__ == "__main__":
     # Test code when calling this file directly. Feel free to modify to make
     # your own test cases
     START = time.time()
-    FILE = "/Users/israel/Desktop/Data/test_tropomi/S5P_NRTI_L2__SO2____20200625T001925_20200625T002425_13983_01_010108_20200625T010642.nc"
+    FILE = "/Users/israel/Downloads/V2021362205348.SO2AI_JPSS-1.h5"
+    # FILE = "/Users/israel/Desktop/Data/OMPS/2020-04-20/OMPS-NPP_NMSO2-PCA-L2_v1.1_2020m0420t111818_o00001_2020m0420t114132.h5"
 
     lat_from = 45
     _lat_to = 65
@@ -924,7 +931,8 @@ if __name__ == "__main__":
     FILTER_STRING = ''
 
     data = import_product(FILE, FILTER_STRING)
-    print(data)
-#     with open("/tmp/test_data.pickle", 'wb') as file:
-#         pickle.dump(data, file)
+    print(data['latitude_bounds'])
+    print(data['longitude_bounds'])
+#     with open("/tmp/test_data.pickle", 'rb') as file:
+#         old_data = pickle.load(file)
     print("Ran in:", time.time() - START)

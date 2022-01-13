@@ -51,7 +51,7 @@ from GradientScale import GradientWidget
 from h5pyimport import import_product
 from util import init_logging
 
-DEBUG = False
+DEBUG = True
 
 
 class DBCursor():
@@ -220,7 +220,7 @@ def check_api(request_url):
         The URL of the server to check for bands/types
     """
     logging.info(f"Checking for required bands/types on server {request_url}")
-    required_types = ['TROPOMI', 'OMPS']
+    required_types = ['TROPOMI', 'OMPS', 'VIIRS']
     required_bands = ['LowTrop', 'MidTrop', 'Cloud']
 
     headers = {'Connection': 'close'}
@@ -308,6 +308,12 @@ class DataFile:
             self._data_type = 'OMPS'
             file_date_info = self._file_name.split("_")[3]
             file_date = datetime.strptime(file_date_info, "%Ym%m%dt%H%M%S")
+        elif self._file_name.startswith('V'):
+            self._heights = ['SO2index']
+            self._data_type = "VIIRS"
+            self._bands = ('SO2', )
+            file_date_info = self._file_name[1:14]
+            file_date = datetime.strptime(file_date_info, '%Y%j%H%M%S')
 
         self._file_date = file_date.replace(tzinfo =pytz.UTC)
 
@@ -358,15 +364,17 @@ class DataFile:
         logging.debug("Sector images generated. Generating Cloud image.")
 
         # We need to do a different load to calculate cloud cover
-        try:
-            self._load_data(validity=0, cloud_fraction='>=0')
-            if not self._data or not self._data['latitude'].any():
-                raise TypeError("Missing data")
-        except TypeError:
-            logging.warning("No data found for cloud load")
-        else:
-            logging.debug("Cloud data loaded, begining processing")
-            self._run_processes(gen_cloud=True)
+        # VIIRS doesn't have cloud data
+        if self._data_type not in ("VIIRS"):
+            try:
+                self._load_data(validity=0, cloud_fraction='>=0')
+                if not self._data or not self._data['latitude'].any():
+                    raise TypeError("Missing data")
+            except TypeError:
+                logging.warning("No data found for cloud load")
+            else:
+                logging.debug("Cloud data loaded, begining processing")
+                self._run_processes(gen_cloud=True)
 
     def _run_processes(self, *args, **kwargs):
         sector_processes = []
@@ -627,8 +635,8 @@ class DataFile:
             warnings.simplefilter("ignore")
             scaled_coords = (shifted_coords * (1 / scale_factors[:, None, None])) - .5
         # "Center" the scaled coordinates so the paths correctly represent the points
-        scaled_coords -= (((numpy.max(scaled_coords, axis=1) -
-                            numpy.min(scaled_coords, axis=1)) - 1) / 2)[:, None, :]
+        scaled_coords -= (((numpy.max(scaled_coords, axis=1)
+                            - numpy.min(scaled_coords, axis=1)) - 1) / 2)[:, None, :]
 
         pixel_paths = [_generate_path(x) for x in scaled_coords]
 
@@ -756,7 +764,7 @@ class DataFile:
                 raw_data = QByteArray()
                 buffer = QBuffer(raw_data)
 
-                if not gen_cloud:
+                if not gen_cloud and not self._data_type in ('VIIRS'):
                     # "Save" the percentile bar to a bytes buffer, in PNG format
                     buffer.open(QIODevice.WriteOnly)
                     _percentContainer.grab().save(buffer, "PNG")
@@ -770,6 +778,8 @@ class DataFile:
                                       mask = img)
 
                 # Add the scale bar and timestamp.
+                scale_top = pil_img.height
+
                 buffer.open(QIODevice.WriteOnly)
                 scale_widget.grab()  # why? WHYYYYYYYY????
                 scale_widget.grab().save(buffer, "PNG")
@@ -785,13 +795,6 @@ class DataFile:
                 date_label.grab().save(buffer, "PNG")
                 buffer.close()
 
-                # Save an archive image
-                logging.debug("Saving archive image for %s", band)
-                filename = f"{self._file_date.strftime('%Y_%m_%d_%H%M%S')}-{band}-{self._data_type}.png"
-                save_file = os.path.join(config.FILE_BASE, 'VolcView', sector['name'], filename)
-                os.makedirs(os.path.dirname(save_file), exist_ok = True)
-                pil_img.save(save_file, format = 'PNG')
-
                 img_stream = BytesIO(raw_data)
                 with Image.open(img_stream) as img:
                     pil_img.paste(img,
@@ -799,6 +802,12 @@ class DataFile:
                                    scale_top - img.height - 5),
                                   mask = img)
 
+                # Save an archive image
+                logging.debug("Saving archive image for %s", band)
+                filename = f"{self._file_date.strftime('%Y_%m_%d_%H%M%S')}-{band}-{self._data_type}.png"
+                save_file = os.path.join(config.FILE_BASE, 'VolcView', sector['name'], filename)
+                os.makedirs(os.path.dirname(save_file), exist_ok = True)
+                pil_img.save(save_file, format = 'PNG')
                 file_stream = BytesIO()
                 # "Save" the image to memory in PNG format
                 pil_img.save(file_stream, format='PNG')
@@ -833,14 +842,17 @@ class DataFile:
             plot_item.removeItem(plot)
         ###############################################################
 
-        if not gen_cloud:
-            plot_dataset(self._normalized_du, self._du_color_map, self._du_scale_labels)
-        else:
+        if gen_cloud:
             band = 'cloud'
             logging.debug("Plotting CLOUD dataset")
             plot_dataset(sector_data['cloud_fraction'], self._cloud_color_map,
                          self._cloud_scale_labels)
             logging.debug("CLOUD dataset plotted. function ends.")
+        elif self._data_type == 'VIIRS':
+            labels = {0: "0", 0.5: "SO2 Index", 1: "100"}
+            plot_dataset(self._normalized_du, self._du_color_map, labels)
+        else:
+            plot_dataset(self._normalized_du, self._du_color_map, self._du_scale_labels)
 
     def _add_coastlines(self, img):
         x_range, y_range = self._view_extents

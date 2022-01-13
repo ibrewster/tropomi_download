@@ -37,7 +37,8 @@ class GradientWidget(QLabel):
             self._maxLabelWidth = 0
             self._maxLabelHeight = 0
             for k in self.labels.values():
-                b = painter.boundingRect(QRectF(0, 0, 0, 0), Qt.AlignLeft | Qt.AlignVCenter, str(k))
+                b = painter.boundingRect(QRectF(0, 0, 0, 0),
+                                         int(Qt.AlignLeft) | int(Qt.AlignVCenter), str(k))
                 self._maxLabelWidth = max(self._maxLabelWidth, b.width())
                 self._maxLabelHeight = max(self._maxLabelHeight, b.height())
 
@@ -85,7 +86,7 @@ class GradientWidget(QLabel):
                 lpos = -1 * ((self.height() - (2 * self.margin)) * pos)
                 painter.drawText(self._barThickness + self._labelMargin, (.5 * self._maxLabelHeight) + lpos, label)
             elif self._orientation == 'Horizontal':
-                text_rect = painter.boundingRect(QRectF(0, 0, 0, 0), Qt.AlignLeft, str(label))
+                text_rect = painter.boundingRect(QRectF(0, 0, 0, 0), int(Qt.AlignLeft), str(label))
                 lpos = ((self.width() - (2 * self.margin)) * pos)  # Center position
                 lleft = lpos - text_rect.width() / 2
                 painter.drawText(lleft + self.margin, self.height() - 1, label)
