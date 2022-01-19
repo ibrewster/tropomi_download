@@ -63,7 +63,7 @@ if __name__ == "__main__":
         logging.info("Filed: %s %s", file_name, formatted_date)
 
         logging.info("Generating volc view images")
-        genVolcView(dest_file)
+        genVolcView(dest_file, False)
 
     logging.info("Complete")
     with open('/tmp/watchmanPython.log', 'a') as logfile:
