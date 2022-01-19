@@ -2,6 +2,7 @@
 import logging
 import os
 import sys
+import shutil
 from datetime import datetime, timezone
 
 from VolcView import main as genVolcView
@@ -54,7 +55,7 @@ if __name__ == "__main__":
                      dest_file
                      )
         try:
-            os.rename(f"{SRC_PATH}/{file_name}", dest_file)
+            shutil.move(f"{SRC_PATH}/{file_name}", dest_file)
         except Exception as e:
             logging.exception(f"Unable to file {file_name}")
             exit(1)
