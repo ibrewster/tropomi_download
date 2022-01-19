@@ -53,7 +53,12 @@ if __name__ == "__main__":
                      f"{SRC_PATH}/{file_name}",
                      dest_file
                      )
-        os.rename(f"{SRC_PATH}/{file_name}", dest_file)
+        try:
+            os.rename(f"{SRC_PATH}/{file_name}", dest_file)
+        except Exception as e:
+            logging.exception(f"Unable to file {file_name}")
+            exit(1)
+
         logging.info("Filed: %s %s", file_name, formatted_date)
 
         logging.info("Generating volc view images")
