@@ -402,13 +402,13 @@ class DataFile:
 
         for idx, proc in enumerate(sector_processes):
             logging.debug("Waiting for process %i to complete", idx)
-            for cnt in range(12):
-                proc.wait(5)  # Wait for all sectors to be complete, but no more than two minutes
+            for cnt in range(600):
+                proc.wait(10)  # Wait for all sectors to be complete, but no more than two minutes
                 if proc.ready():
                     break
                 logging.debug("Still waiting for process after %i, status: %r", cnt, proc.ready())
             else:
-                logging.warning("Image generation process failed to complete after 60 seconds. Will be terminated.")
+                logging.warning("Image generation process failed to complete after 10 minutes. Will be terminated.")
         # All processes have either ended or timed-out. Terminate any remaining
         if not DEBUG:
             pool.terminate()
