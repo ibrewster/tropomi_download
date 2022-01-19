@@ -24,7 +24,8 @@ if __name__ == "__main__":
         logging.info("Processing file %s", file)
         file_name = os.path.basename(file)
 
-        if not file_name.endswith('.h5') or not file['exists']:
+        if not file_name.endswith('.h5') or not os.path.isfile(file):
+            logging.info("Skipping file due to not supported issue")
             continue
 
         if file_name.startswith('V'):
