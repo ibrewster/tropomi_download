@@ -21,6 +21,7 @@ if __name__ == "__main__":
 
     logging.info("Got file_info of: %s", str(files))
     for file in files:
+        logging.info("Processing file %s", file)
         file_name = os.path.basename(file)
 
         if not file_name.endswith('.h5') or not file['exists']:
