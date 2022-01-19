@@ -51,7 +51,7 @@ from GradientScale import GradientWidget
 from h5pyimport import import_product
 from util import init_logging
 
-DEBUG = True
+DEBUG = False
 
 
 class DBCursor():
@@ -221,7 +221,7 @@ def check_api(request_url):
     """
     logging.info(f"Checking for required bands/types on server {request_url}")
     required_types = ['TROPOMI', 'OMPS', 'VIIRS']
-    required_bands = ['LowTrop', 'MidTrop', 'Cloud']
+    required_bands = ['LowTrop', 'MidTrop', 'Cloud', 'SO2idx']
 
     headers = {'Connection': 'close'}
     try:
@@ -939,9 +939,9 @@ def main(data_file, use_spawn=True):
 
 if __name__ == "__main__":
     init_logging()
-    parser = argparse.ArgumentParser(description = "TROPOMI interface to VolcView")
+    parser = argparse.ArgumentParser(description = "SO2 data file interface to VolcView")
     parser.add_argument("files", nargs = "*", default = [],
-                        help = "TROPOMI data files to generate and upload VolcView images for")
+                        help = "SO2 data files to generate and upload VolcView images for")
     parser.add_argument("-c", "--check", dest = "check", action='store_const',
                         help = "Check VolcView servers for the required bands/types, creating if needed",
                         const = True, default = False)
