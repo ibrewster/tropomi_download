@@ -402,7 +402,7 @@ class DataFile:
 
         for idx, proc in enumerate(sector_processes):
             logging.debug("Waiting for process %i to complete", idx)
-            for cnt in range(600):
+            for cnt in range(60):
                 proc.wait(10)  # Wait for all sectors to be complete, but no more than two minutes
                 if proc.ready():
                     break
