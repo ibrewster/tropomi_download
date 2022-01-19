@@ -221,7 +221,7 @@ def check_api(request_url):
     """
     logging.info(f"Checking for required bands/types on server {request_url}")
     required_types = ['TROPOMI', 'OMPS', 'VIIRS']
-    required_bands = ['LowTrop', 'MidTrop', 'Cloud', 'SO2idx']
+    required_bands = ['LowTrop', 'MidTrop', 'Cloud']
 
     headers = {'Connection': 'close'}
     try:
