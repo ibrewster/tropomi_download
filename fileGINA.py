@@ -28,11 +28,13 @@ if __name__ == "__main__":
 
         if file_name.startswith('V'):
             # VIIRS file
+            logging.debug("Detected VIIRS file")
             date_part = file_name[1:14]
             date_format = '%Y%j%H%M%S'
             DEST_PATH = '/data/viirs'
         else:
             # OMPS
+            logging.debug("Detected OMPS file")
             file_parts = file_name.split('_')
             date_part = file_parts[3]
             date_format = '%Ym%m%dt%H%M%S'
@@ -44,6 +46,11 @@ if __name__ == "__main__":
 
         os.makedirs(f"{DEST_PATH}/{formatted_date}", exist_ok=True)
         dest_file = f"{DEST_PATH}/{formatted_date}/{file_name}"
+
+        logging.info("Filing %s in %s",
+                     f"{SRC_PATH}/{file_name}",
+                     dest_file
+                     )
         os.rename(f"{SRC_PATH}/{file_name}", dest_file)
         logging.info("Filed: %s %s", file_name, formatted_date)
 
