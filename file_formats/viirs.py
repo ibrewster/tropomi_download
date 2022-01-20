@@ -114,6 +114,7 @@ DEF = {
         'binRadius': 2e5,
         'grid_x_resolution': 50000,  # In meters
         'grid_y_resolution': 50000,
+        'fillvalue': -999.8,
         'file_time': {},
         'point_time': {
             'GROUP': '/All_Data/VIIRS-SO2-ASH-INDICES-L2_All',

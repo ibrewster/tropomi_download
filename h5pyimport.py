@@ -242,6 +242,7 @@ def _load_file_data(file_def, filepath):
 
     # Fetch desired data from file
     group_spec = ((g['GROUP'], f) for g in file_def['GROUPS'] for f in g['FIELDS'])
+    spec_fill = file_def['INFO'].get('fillvalue')  # May be none
     for group, spec in group_spec:
         field = spec.get('DEST', spec['NAME'])
 
@@ -259,7 +260,7 @@ def _load_file_data(file_def, filepath):
 
         path = f"{group}/{spec['NAME']}"
         field_data = numpy.asarray(h5_file[path])
-        fill_value = h5_file[path].fillvalue
+        fill_value = spec_fill or h5_file[path].fillvalue
         if fill_value is not None:
             try:
                 field_data[field_data == fill_value] = numpy.nan
