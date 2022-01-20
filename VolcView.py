@@ -221,7 +221,7 @@ def check_api(request_url):
     """
     logging.info(f"Checking for required bands/types on server {request_url}")
     required_types = ['TROPOMI', 'OMPS', 'VIIRS']
-    required_bands = ['LowTrop', 'MidTrop', 'Cloud']
+    required_bands = ['LowTrop', 'MidTrop', 'Cloud', 'SO2']
 
     headers = {'Connection': 'close'}
     try:
@@ -259,6 +259,8 @@ def check_api(request_url):
             res = requests.post(request_url + 'bandApi/band',
                                 data=json.dumps(request),
                                 headers=headers)
+            logging.warning("Result code:", res.status_code)
+            logging.warning("Result text", res.text)
             logging.info(f"Added with result: {res.status_code}, {res.text}")
 
     logging.info("All required bands/types created")
