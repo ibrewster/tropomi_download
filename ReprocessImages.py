@@ -43,7 +43,6 @@ from PySide2.QtCore import (QSize,
 
 from GradientScale import GradientWidget
 from h5pyimport import import_product
-from util import init_logging
 
 DEBUG = False
 
@@ -547,8 +546,8 @@ class DataFile:
             warnings.simplefilter("ignore")
             scaled_coords = (shifted_coords * (1 / scale_factors[:, None, None])) - .5
         # "Center" the scaled coordinates so the paths correctly represent the points
-        scaled_coords -= (((numpy.max(scaled_coords, axis=1) -
-                            numpy.min(scaled_coords, axis=1)) - 1) / 2)[:, None, :]
+        scaled_coords -= (((numpy.max(scaled_coords, axis=1)
+                            - numpy.min(scaled_coords, axis=1)) - 1) / 2)[:, None, :]
 
         pixel_paths = [_generate_path(x) for x in scaled_coords]
 
@@ -765,6 +764,33 @@ def main(data_file, use_spawn=True):
     file_processor.process_data()
     logging.info("Completed run in %d seconds", time.time() - start)
     return
+
+
+def init_logging():
+    logging.basicConfig(level=logging.DEBUG,
+                        format=config.LOG_FORMAT,
+                        filename= '/var/log/tropomi_reprocessing.log',
+                        filemode='a')
+
+    # Logging handler to output to the console when running
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.INFO)
+
+    # Logging handler to output to the log file
+    fh = logging.FileHandler(config.LOG_FILE)
+    fh.setLevel(config.LOG_FILE_LEVEL)
+
+    formatter = logging.Formatter(config.LOG_FORMAT)
+    ch.setFormatter(formatter)
+    fh.setFormatter(formatter)
+
+    logger = logging.getLogger('')
+    for h in logger.handlers:
+        logger.removeHandler(h)
+
+    logger.setLevel(logging.DEBUG)
+    logger.addHandler(ch)
+    logger.addHandler(fh)
 
 
 if __name__ == "__main__":
