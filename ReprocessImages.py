@@ -780,7 +780,7 @@ if __name__ == "__main__":
 
     for arg in args.files:
         if os.path.isdir(arg):
-            files = Path("/Users/israel/Desktop").rglob('*.[hn][5c]')
+            files = Path(arg).rglob('*.[hn][5c]')
         else:
             files = [arg]
 
