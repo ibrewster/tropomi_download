@@ -11,6 +11,7 @@ import sys
 import time
 import warnings
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
@@ -546,8 +547,8 @@ class DataFile:
             warnings.simplefilter("ignore")
             scaled_coords = (shifted_coords * (1 / scale_factors[:, None, None])) - .5
         # "Center" the scaled coordinates so the paths correctly represent the points
-        scaled_coords -= (((numpy.max(scaled_coords, axis=1)
-                            - numpy.min(scaled_coords, axis=1)) - 1) / 2)[:, None, :]
+        scaled_coords -= (((numpy.max(scaled_coords, axis=1) -
+                            numpy.min(scaled_coords, axis=1)) - 1) / 2)[:, None, :]
 
         pixel_paths = [_generate_path(x) for x in scaled_coords]
 
@@ -804,13 +805,18 @@ if __name__ == "__main__":
         print("No files specified. Nothing to do.")
         exit(1)
 
-    for arg in args.files:
-        if os.path.isdir(arg):
-            files = Path(arg).rglob('*.[hn][5c]')
-        else:
-            files = [arg]
+    threads = []
+    with ThreadPoolExecutor() as executor:
+        for arg in args.files:
+            if os.path.isdir(arg):
+                files = Path(arg).rglob('*.[hn][5c]')
+            else:
+                files = [arg]
 
-        for file in files:
-            main(str(file))
+            for file in files:
+                threads.append(executor.submit(main, str(file)))
+
+    for thread in threads:
+        print(thread.result())
 
     exit(0)
