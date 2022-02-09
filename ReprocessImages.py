@@ -785,6 +785,6 @@ if __name__ == "__main__":
             files = [arg]
 
         for file in files:
-            main(file)
+            main(str(file))
 
     exit(0)
