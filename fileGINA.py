@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import shutil
+import time
 from datetime import datetime, timezone
 
 from VolcView import main as genVolcView
@@ -22,6 +23,15 @@ if __name__ == "__main__":
 
     logging.info("Got file_info of: %s", str(files))
     for file in files:
+        # Make sure file is settled. If not, exit.
+        file_size = os.path.getsize(file)
+        time.sleep(15)
+        new_file_size = os.path.getsize(file)
+        if new_file_size != file_size:
+            # File is still being transfered. Don't do anything.
+            logging.info("File transfer still in process. Not processing")
+            exit(1)
+
         logging.info("Processing file %s", file)
         file_name = os.path.basename(file)
 
