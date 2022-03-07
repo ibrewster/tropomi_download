@@ -299,6 +299,9 @@ class DataFile:
                 pool = mp.Pool(initializer = init_logging)
 
         for sector in self._sectors:
+            if sector['name'] in ['South-Central Alaska', 'Kilauea', 'Marianas Islands']:
+                continue
+
             logging.debug("Launching generation process")
             if DEBUG:
                 self._generate_sector(sector, *args, **kwargs)
@@ -360,7 +363,10 @@ class DataFile:
 
     def _generate_sector(self, sector, band=None, gen_cloud=False):
         filename = f"{self._file_date.strftime('%Y_%m_%d_%H%M%S')}-{band}-{self._data_type}.png"
-        save_file = os.path.join(config.FILE_BASE, 'VolcView', sector['name'], filename)
+        save_file = os.path.join(config.FILE_BASE, 'VolcView', sector['name'],
+                                 self._file_date.strftime('%Y'),
+                                 self._file_date.strftime('%m'),
+                                 filename)
         if os.path.exists(save_file) and os.path.isfile(save_file):
             logging.info("Sector has already been generated.")
             return
@@ -553,8 +559,8 @@ class DataFile:
             warnings.simplefilter("ignore")
             scaled_coords = (shifted_coords * (1 / scale_factors[:, None, None])) - .5
         # "Center" the scaled coordinates so the paths correctly represent the points
-        scaled_coords -= (((numpy.max(scaled_coords, axis=1)
-                            - numpy.min(scaled_coords, axis=1)) - 1) / 2)[:, None, :]
+        scaled_coords -= (((numpy.max(scaled_coords, axis=1) -
+                            numpy.min(scaled_coords, axis=1)) - 1) / 2)[:, None, :]
 
         pixel_paths = [_generate_path(x) for x in scaled_coords]
 
