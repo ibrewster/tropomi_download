@@ -807,7 +807,10 @@ class DataFile:
                 # Save an archive image
                 logging.debug("Saving archive image for %s", band)
                 filename = f"{self._file_date.strftime('%Y_%m_%d_%H%M%S')}-{band}-{self._data_type}.png"
-                save_file = os.path.join(config.FILE_BASE, 'VolcView', sector['name'], filename)
+                save_file = os.path.join(config.FILE_BASE, 'VolcView', sector['name'],
+                                         self._file_date.strftime('%Y'),
+                                         self._file_date.strftime('%m'),
+                                         filename)
                 os.makedirs(os.path.dirname(save_file), exist_ok = True)
                 pil_img.save(save_file, format = 'PNG')
                 file_stream = BytesIO()

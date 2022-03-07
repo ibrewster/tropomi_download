@@ -383,10 +383,15 @@ class NetCDFFile:
         with h5py.File(self._files[0], 'r') as f:
             for ftype, fdef in self._FILE_DEFS.items():
                 ident_attr = fdef.get('INFO', {}).get('ident_attr', {}).get('NAME')
+
+                if ident_attr == 'NoATTR' and len(f.attrs) == 0:
+                    # No attributes in file
+                    break
+
                 if ident_attr is None:
                     continue
                 ident_val = fdef.get('INFO', {}).get('ident_attr', {}).get('VALUE')
-                if f.attrs.get(ident_attr) == ident_val:
+                if f.attrs.get(ident_attr, 'NoValue') == ident_val:
                     break
             else:
                 raise TypeError("Unable to identify file type")
