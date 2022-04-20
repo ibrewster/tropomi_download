@@ -20,6 +20,7 @@ import numpy
 import pytz
 import pyproj
 import pyqtgraph as pg
+import requests
 import xarray
 
 from PIL import Image
@@ -272,10 +273,11 @@ class DataFile:
                                         data=request_data,
                                         headers=request_headers)
                     break
-                except Exception:
+                except Exception as e:
                     # Connection failure, not just bad return code from server
-                    logging.warning("Upload Failure for server %s. Waiting 5 seconds to retry",
+                    logging.traceback("Upload Failure for server %s. Waiting 5 seconds to retry",
                                     request_url)
+                    logging.warning(f"Error: {e}")
                     time.sleep(5)
             else:
                 logging.error("Unable to upload to server %s after 10 attempts. Giving up.",
