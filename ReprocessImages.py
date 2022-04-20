@@ -771,6 +771,9 @@ class DataFile:
                 logging.debug("Saving archive image for %s", band)
                 os.makedirs(os.path.dirname(save_file), exist_ok = True)
                 pil_img.save(save_file, format = 'PNG')
+                
+                file_stream = BytesIO(file_bytes)
+                pil_img.save(file_stream, format = 'PNG')
                 file_stream.seek(0)  # Go back to the begining for reading out
                 logging.debug("Uploading image for %s", band)
                 self._volcview_upload(file_stream, sector, band)
