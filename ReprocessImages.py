@@ -205,7 +205,7 @@ class DataFile:
 
         # Sectors to generate images for
         self._sectors = sectors
-        self._sectors = [x for x in sectors if x['name'] == 'Edgecumbe']
+        self._sectors = [x for x in sectors if x['name'] == 'South-East']
 
         # File to generate images for
         self._file = data_file
