@@ -204,6 +204,7 @@ class DataFile:
 
         # Sectors to generate images for
         self._sectors = sectors
+        self._sectors = [x for x in sectors if x['name'] == 'Edgecumbe']
 
         # File to generate images for
         self._file = data_file
@@ -245,6 +246,44 @@ class DataFile:
 
         self._mpctx = mp.get_context('spawn')
 
+    def _volcview_upload(self, img, sector, band):
+        request_headers = {'username': config.VOLCVIEW_USER,
+                           'password': config.VOLCVIEW_PASSWORD, }
+
+        request_data = {
+            'sector': sector['sector'],
+            'band': band,
+            'dataType': self._data_type,
+            'imageUnixtime': self._file_date.timestamp(),
+        }
+
+        filename = f"{band}-{self._data_type}-{self._file_date.strftime('%Y_%m_%d_%H%M%S')}-{sector['name']}.png"
+        files = {'file': (filename, img)}
+
+        return_codes = []
+        for request_url in config.VOLCVIEW_SERVERS:
+            attempt_count = 0
+            while attempt_count < 10:
+                attempt_count += 1
+                try:
+                    img.seek(0)
+                    res = requests.post(request_url + self._upload_path,
+                                        files=files,
+                                        data=request_data,
+                                        headers=request_headers)
+                    break
+                except Exception:
+                    # Connection failure, not just bad return code from server
+                    logging.warning("Upload Failure for server %s. Waiting 5 seconds to retry",
+                                    request_url)
+                    time.sleep(5)
+            else:
+                logging.error("Unable to upload to server %s after 10 attempts. Giving up.",
+                              request_url)
+
+            logging.info("%s %s %s %s", request_url, sector['name'], filename, res.status_code)
+            return_codes.append(res.status_code == 200)
+            
     def process_data(self):
 
         for idx, height in enumerate(self._heights):
@@ -730,7 +769,9 @@ class DataFile:
                 logging.debug("Saving archive image for %s", band)
                 os.makedirs(os.path.dirname(save_file), exist_ok = True)
                 pil_img.save(save_file, format = 'PNG')
-
+                file_stream.seek(0)  # Go back to the begining for reading out
+                logging.debug("Uploading image for %s", band)
+                self._volcview_upload(file_stream, sector, band)
             else:
                 logging.info("Not enough coverage to bother with")
 

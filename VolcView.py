@@ -238,8 +238,8 @@ def check_api(request_url):
         # Same as above
         data_types = required_types
 
-    headers = {'username': 'israel',
-               'password': 'brewster', }
+    headers = {'username': config.VOLCVIEW_USER,
+               'password': config.VOLCVIEW_PASSWORD, }
 
     for dtype in required_types:
         if dtype.lower() not in data_types:
