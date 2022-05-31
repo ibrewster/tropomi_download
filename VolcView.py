@@ -380,13 +380,14 @@ class DataFile:
 
     def _run_processes(self, *args, **kwargs):
         sector_processes = []
+        max_processes = mp.cpu_count() / 2
         if not DEBUG:
             if self.use_spawn:
                 logging.debug("Using SPAWN to launch process")
-                pool = self._mpctx.Pool(initializer = init_logging)
+                pool = self._mpctx.Pool(initializer = init_logging, processes = max_processes)
             else:
                 logging.debug("Using normal FORK to launch process")
-                pool = mp.Pool(initializer = init_logging)
+                pool = mp.Pool(initializer = init_logging, processes = max_processes)
 
         for sector in self._sectors:
             logging.debug("Launching generation process")
