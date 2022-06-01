@@ -380,7 +380,7 @@ class DataFile:
 
     def _run_processes(self, *args, **kwargs):
         sector_processes = []
-        max_processes = mp.cpu_count() / 2
+        max_processes = int(mp.cpu_count() / 2)
         if not DEBUG:
             if self.use_spawn:
                 logging.debug("Using SPAWN to launch process")
