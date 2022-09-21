@@ -17,7 +17,7 @@ import config
 from util import init_logging
 from VolcView import main as sendVolcView
 
-SHOW_PROGRESS = True
+SHOW_PROGRESS = False
 
 auth = HTTPBasicAuth('s5pguest', 's5pguest')
 
