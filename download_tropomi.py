@@ -17,7 +17,7 @@ import config
 from util import init_logging
 from VolcView import main as sendVolcView
 
-SHOW_PROGRESS = False
+SHOW_PROGRESS = True
 
 auth = HTTPBasicAuth('s5pguest', 's5pguest')
 
@@ -122,8 +122,9 @@ processinglevel:L2 AND processingmode:{PROCESS_FILTER}))',
     PARAM_STRING = urlencode(SEARCH_PARAMS, safe="/():,[]", quote_via=quote)
 
     URL = f"{SEARCH_URL}?{PARAM_STRING}"
+    headers = {'Accept': 'application/json, text/plain, */*'}
 
-    results = requests.get(URL, auth=auth)
+    results = requests.get(URL, auth=auth, headers = headers)
     if results.status_code != 200:
         logging.error(f"An error occured while searching: %i\n%s",
                       results.status_code, results.text)
