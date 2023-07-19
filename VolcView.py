@@ -30,17 +30,17 @@ import xarray
 from PIL import Image
 from pycoast import ContourWriterAGG
 
-from PySide2.QtGui import (QPainterPath,
+from PySide6.QtGui import (QPainterPath,
                            QFont)
 
-from PySide2.QtWidgets import (QApplication,
+from PySide6.QtWidgets import (QApplication,
                                QWidget,
                                QVBoxLayout,
                                QHBoxLayout,
                                QLabel)
 
 
-from PySide2.QtCore import (QSize,
+from PySide6.QtCore import (QSize,
                             QByteArray,
                             QBuffer,
                             QIODevice,

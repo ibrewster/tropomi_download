@@ -28,8 +28,8 @@ import xarray
 from pyresample import bilinear, geometry, create_area_def
 
 
-if 'PySide2.QtWidgets' in sys.modules:
-    from PySide2.QtCore import (
+if 'PySide6.QtWidgets' in sys.modules:
+    from PySide6.QtCore import (
         QThread,
         Signal,
     )
