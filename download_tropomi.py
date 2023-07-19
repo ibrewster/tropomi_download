@@ -1,12 +1,16 @@
 import math
 import os
+import sys
+import json
 
 from concurrent.futures import ThreadPoolExecutor
+from oauthlib.oauth2 import BackendApplicationClient
+from requests_oauthlib import OAuth2Session
 from urllib.parse import urlencode, quote
 
 import shelve
 import logging
-from datetime import timedelta, date
+from datetime import timedelta, date, datetime
 from shapely import wkt, geometry
 from dateutil.parser import parse
 import numpy
@@ -15,11 +19,50 @@ from requests.auth import HTTPBasicAuth
 
 import config
 from util import init_logging
-from VolcView import main as sendVolcView
+
+if len(sys.argv) < 2 or not sys.argv[1] == "--no-volcview":
+    from VolcView import main as sendVolcView
 
 SHOW_PROGRESS = False
 
 auth = HTTPBasicAuth('s5pguest', 's5pguest')
+
+
+def sentinelhub_compliance_hook(response):
+    response.raise_for_status()
+    return response
+
+
+def auth_sentinelhub():
+    oauth_secret = config.SH_OAUTH_SECRET
+    oauth_id = config.SH_OAUTH_ID
+
+    token_path = os.path.join(os.path.dirname(__file__), 'ds_auth', 'token.jwt')
+    token = None
+    if os.path.exists(token_path):
+        with open(token_path, 'r') as f:
+            token = json.load(f)
+
+        expires = datetime.utcfromtimestamp(token['expires_at'])
+        if expires < datetime.utcnow():
+            token = None #token has expired. Get rid of it.
+
+    client = BackendApplicationClient(client_id = oauth_id)
+    if token is None:
+        session = OAuth2Session(client = client)
+
+        # Get token for the session
+        token = session.fetch_token(token_url='https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token',
+                                    client_secret=oauth_secret)
+
+        with open(token_path, 'w') as f:
+            json.dump(token, f)
+    else:
+        session = OAuth2Session(client = client, token = token)
+
+    session.register_compliance_hook("access_token_response", sentinelhub_compliance_hook)
+
+    return session
 
 
 def download_part(url, start, end, output):
@@ -53,6 +96,73 @@ def download_part(url, start, end, output):
                 logging.error("Error downloading part %s. Expected %d bytes, got %d bytes",
                               output, full_size, downloaded_size)
                 continue
+
+
+def download_sentinel_part(url, start, end, output):
+    downloaded_size = 0
+    retry_count = 0
+    full_size = end - start
+    while True:
+        with open(output, 'ab') as part_file:
+            resume_header = {'Range': f'bytes={start+part_file.tell()}-{end}', }
+            session = auth_sentinelhub()
+            download_request = session.get(url, stream=True,
+                                           headers=resume_header)
+
+            for chunk in download_request.iter_content(chunk_size=4096):  # Try 4K chunk size
+                downloaded_size += len(chunk)
+                percent_complete = round((downloaded_size / full_size) * 100, 2)
+                if SHOW_PROGRESS and percent_complete % 1 == 0:
+                    print(f" {percent_complete}% ", end='\r')
+                part_file.write(chunk)
+
+            if downloaded_size >= full_size:
+                logging.info("Downloaded file part %s with result %d",
+                             output, download_request.status_code)
+                download_request.close()
+                break
+            else:
+                retry_count += 1
+                if retry_count > 10:
+                    logging.error("Too many retries. Giving up.")
+                    raise FileNotFoundError("Unable to retrieve file part")
+
+                logging.error("Error downloading part %s. Expected %d bytes, got %d bytes",
+                              output, full_size, downloaded_size)
+                continue
+
+
+def download_sentinelhub(filename, url):
+    session = auth_sentinelhub()
+    info = session.head(url)
+    total_size = int(info.headers['content-length'])
+
+    chunk_size = math.ceil(total_size / 4)
+    start_byte = 0
+    end_byte = 0
+    chunk_num = -1
+    with ThreadPoolExecutor(max_workers = 4) as executor:
+        while end_byte < total_size:
+            chunk_num += 1
+            end_byte = start_byte + chunk_size
+            if end_byte > total_size:
+                end_byte = total_size
+
+            logging.info("Downloading chunk # %i", chunk_num)
+            executor.submit(download_sentinel_part, url, start_byte, end_byte,
+                            f"{filename}.part{chunk_num}")
+
+            start_byte = end_byte + 1
+
+    # Read in the file parts and write out the full file
+    logging.info("Recombining file from parts")
+    with open(f"{filename}.download", 'wb') as out_file:
+        for i in range(chunk_num + 1):
+            chunk_path = f"{filename}.part{i}"
+            with open(chunk_path, 'rb') as part_file:
+                out_file.write(part_file.read())
+
+            os.remove(chunk_path)
 
 
 def download_file(file_name, uuid):
@@ -134,6 +244,77 @@ processinglevel:L2 AND processingmode:{PROCESS_FILTER}))',
     return results_object, 200
 
 
+def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
+    if not DATE_TO.endswith('Z'):
+        DATE_TO += 'T00:00:00Z'
+
+    if not DATE_FROM.endswith('Z'):
+        DATE_FROM += 'T00:00:00Z'
+
+    SEARCH_URL = "https://sh.dataspace.copernicus.eu/api/v1/catalog/1.0.0/search"
+    SEARCH_URL = "https://"
+    PROCESS_FILTER = "OFFL" if config.OFFLINE else "NRTI"
+
+    logging.info("Downloading %s files from %s", PROCESS_FILTER, DATE_FROM)
+
+    footprints = []
+    for west, east, south, north in config.SECTORS:
+        footprint = [
+            [
+                [west, south],
+                [east, south],
+                [east, north],
+                [west, north],
+                [west, south]
+            ]
+        ]
+
+        footprints.append(footprint)
+
+    search_params = {
+        "datetime": f"{DATE_FROM}/{DATE_TO}",
+        "collections": ["sentinel-5p-l2"],
+        "limit": 100,
+        "fields": {
+            "exclude": [
+                'type',
+                'bbox',
+                'assets',
+                'properties.datetime'
+            ]
+        },
+        "filter": f"s5p:timeliness='{PROCESS_FILTER}' and s5p:type='SO2'",
+        'intersects': {
+            "type": "MultiPolygon",
+            "coordinates": footprints,
+        },
+    }
+
+    session = auth_sentinelhub()
+    done = False
+    offset = 0
+    features = []
+    while not done:
+        results = session.post(SEARCH_URL, json = search_params)
+
+        if results.status_code != 200:
+            logging.error(f"An error occured while searching: %i\n%s",
+                          results.status_code, results.text)
+            return None, results.status_code
+
+        results_object = results.json()
+
+        next_val = results_object['context'].get('next', -1)
+        if next_val < 0:
+            done = True
+        else:
+            search_params['next'] = next_val
+
+        features += results_object['features']
+
+    return features, 200
+
+
 if __name__ == "__main__":
     init_logging()
 
@@ -176,9 +357,12 @@ if __name__ == "__main__":
         identifier = product['identifier']
         id_parts = [x for x in identifier.split('_') if x]
         filetime = parse(id_parts[4] + "z")
+        year = filetime.strftime("%Y")
+        month = filetime.strftime("%m")
+        day = filetime.strftime("%d")
         filedate = filetime.strftime('%Y-%m-%d')
 
-        file_dir = os.path.join(config.FILE_BASE, DEST_DIR, filedate)
+        file_dir = os.path.join(config.FILE_BASE, DEST_DIR, year, month, day)
         volc_dir = os.path.join(config.FILE_BASE, DEST_DIR)
 
         os.makedirs(file_dir, exist_ok=True)
@@ -241,7 +425,8 @@ if __name__ == "__main__":
                     os.unlink(link_file)
                 os.link(f"{file_name}.nc", link_file)
             # Generate volc view images
-            sendVolcView(f"{file_name}.nc")
+            if len(sys.argv) < 2 or not sys.argv[1] == "--no-volcview":
+                sendVolcView(f"{file_name}.nc")
 
     with shelve.open(cache_location) as cache:
         cache['lastRun'] = date.today()

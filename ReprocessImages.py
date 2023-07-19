@@ -205,7 +205,7 @@ class DataFile:
 
         # Sectors to generate images for
         self._sectors = sectors
-        self._sectors = [x for x in sectors if x['name'] == 'South-East']
+        self._sectors = [x for x in sectors if x['name'] == 'Eastern Aleutians']
 
         # File to generate images for
         self._file = data_file
@@ -240,7 +240,7 @@ class DataFile:
                                           (248, 152, 6),
                                           (255, 19, 0),
                                           (255, 0, 0)])
-        self._du_scale_labels = {0: "0 DU", .05: "1 DU", .1: "2 DU", .25: "5 DU", .6: "12 DU", 1: ">20 DU", }
+        self._du_scale_labels = {0: "0 DU", .05: "0.5 DU", .1: "1 DU", .25: "2.5 DU", .6: "6 DU", 1: ">10 DU", }
 
         self._cloud_color_map = pg.ColorMap([0, 1], [(0, 0, 0), (255, 255, 255)])
         self._cloud_scale_labels = {0: "0%", 1: "100%", }
@@ -276,7 +276,7 @@ class DataFile:
                 except Exception as e:
                     # Connection failure, not just bad return code from server
                     logging.traceback("Upload Failure for server %s. Waiting 5 seconds to retry",
-                                    request_url)
+                                      request_url)
                     logging.warning(f"Error: {e}")
                     time.sleep(5)
             else:
@@ -285,7 +285,7 @@ class DataFile:
 
             logging.info("%s %s %s %s", request_url, sector['name'], filename, res.status_code)
             return_codes.append(res.status_code == 200)
-            
+
     def process_data(self):
 
         for idx, height in enumerate(self._heights):
@@ -568,14 +568,14 @@ class DataFile:
         total_mass = numpy.nansum(mass) * 1e-9  # Kilo Tonnes
 
         self._du_val = sector_data['SO2_column_number_density'] * 2241.15  # Conversion Factor from manual
-        self._normalized_du = self._du_val * (1 / 20)
+        self._normalized_du = self._du_val * (1 / 10)
         self._normalized_du[self._normalized_du > 1] = 1
         self._normalized_du[self._normalized_du < 0] = 0
 
         _percentile_levels = (90, 95, 97, 99, 100)
         _percentiles = numpy.nanpercentile(self._du_val, _percentile_levels)
         _percentiles[_percentiles < 0] = 0
-        _percentiles[_percentiles > 20] = 20
+        _percentiles[_percentiles > 10] = 10
 
         _percentColors = self._du_color_map.map(_percentiles * (1 / 20),
                                                 mode = 'qcolor')
@@ -600,8 +600,8 @@ class DataFile:
             warnings.simplefilter("ignore")
             scaled_coords = (shifted_coords * (1 / scale_factors[:, None, None])) - .5
         # "Center" the scaled coordinates so the paths correctly represent the points
-        scaled_coords -= (((numpy.max(scaled_coords, axis=1) -
-                            numpy.min(scaled_coords, axis=1)) - 1) / 2)[:, None, :]
+        scaled_coords -= (((numpy.max(scaled_coords, axis=1)
+                            - numpy.min(scaled_coords, axis=1)) - 1) / 2)[:, None, :]
 
         pixel_paths = [_generate_path(x) for x in scaled_coords]
 
@@ -771,12 +771,13 @@ class DataFile:
                 logging.debug("Saving archive image for %s", band)
                 os.makedirs(os.path.dirname(save_file), exist_ok = True)
                 pil_img.save(save_file, format = 'PNG')
-                
-                file_stream = BytesIO(file_bytes)
-                pil_img.save(file_stream, format = 'PNG')
-                file_stream.seek(0)  # Go back to the begining for reading out
-                logging.debug("Uploading image for %s", band)
-                self._volcview_upload(file_stream, sector, band)
+                logging.info(f"Saved archive image to {save_file}")
+
+                # file_stream = BytesIO(file_bytes)
+                # pil_img.save(file_stream, format = 'PNG')
+                # file_stream.seek(0)  # Go back to the begining for reading out
+                # logging.debug("Uploading image for %s", band)
+                # self._volcview_upload(file_stream, sector, band)
             else:
                 logging.info("Not enough coverage to bother with")
 

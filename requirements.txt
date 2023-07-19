@@ -5,6 +5,7 @@ pytz
 numpy
 pyproj
 requests
+requests-oauthlib
 PySide2
 pyqtgraph
 psycopg2-binary
