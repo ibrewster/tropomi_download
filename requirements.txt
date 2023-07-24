@@ -6,7 +6,7 @@ numpy
 pyproj
 requests
 requests-oauthlib
-PySide6
+PySide2
 pyqtgraph
 psycopg2-binary
 shapely

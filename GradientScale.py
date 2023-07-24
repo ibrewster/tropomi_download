@@ -1,11 +1,11 @@
-from PySide6.QtWidgets import QLabel
-from PySide6.QtGui import (QPainter,
+from PySide2.QtWidgets import QLabel
+from PySide2.QtGui import (QPainter,
                            QLinearGradient,
                            QTransform,
                            QTextDocument,
                            QFontMetrics)
 
-from PySide6.QtCore import QPointF
+from PySide2.QtCore import QPointF
 
 
 class GradientWidget(QLabel):
@@ -165,10 +165,10 @@ class GradientWidget(QLabel):
             title_doc.setTextWidth(self._title_width)
             self._title_height = title_doc.size().height()
 
-        # Font metrics are overly generous (at least for width), 
+        # Font metrics are overly generous (at least for width),
         # so decrease the calculated values significantly
         self._maxLabelWidth *= .8
-        
+
         if self._orientation == 'Horizontal':
             self.setMinimumHeight(self._maxLabelHeight + self._barThickness + self._labelMargin + self._title_height)
         elif self._orientation == "Vertical":

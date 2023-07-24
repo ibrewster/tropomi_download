@@ -30,17 +30,17 @@ import xarray
 from PIL import Image
 from pycoast import ContourWriterAGG
 
-from PySide6.QtGui import (QPainterPath,
+from PySide2.QtGui import (QPainterPath,
                            QFont)
 
-from PySide6.QtWidgets import (QApplication,
+from PySide2.QtWidgets import (QApplication,
                                QWidget,
                                QVBoxLayout,
                                QHBoxLayout,
                                QLabel)
 
 
-from PySide6.QtCore import (QSize,
+from PySide2.QtCore import (QSize,
                             QByteArray,
                             QBuffer,
                             QIODevice,
@@ -52,6 +52,7 @@ from h5pyimport import import_product
 from util import init_logging
 
 DEBUG = False
+
 
 class DBCursor():
     _conn = None
@@ -637,8 +638,8 @@ class DataFile:
             warnings.simplefilter("ignore")
             scaled_coords = (shifted_coords * (1 / scale_factors[:, None, None])) - .5
         # "Center" the scaled coordinates so the paths correctly represent the points
-        scaled_coords -= (((numpy.max(scaled_coords, axis=1)
-                            - numpy.min(scaled_coords, axis=1)) - 1) / 2)[:, None, :]
+        scaled_coords -= (((numpy.max(scaled_coords, axis=1) -
+                            numpy.min(scaled_coords, axis=1)) - 1) / 2)[:, None, :]
 
         pixel_paths = [_generate_path(x) for x in scaled_coords]
 
