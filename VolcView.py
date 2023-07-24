@@ -53,7 +53,6 @@ from util import init_logging
 
 DEBUG = False
 
-
 class DBCursor():
     _conn = None
     _cursor = None
@@ -790,8 +789,9 @@ class DataFile:
 
                 img_stream = BytesIO(raw_data)
                 with Image.open(img_stream) as img:
+                    mask = img.convert("RGBA")
                     scale_top = pil_img.height - img.height - 10
-                    pil_img.paste(img, (25, scale_top), mask = img)
+                    pil_img.paste(img, (25, scale_top), mask = mask)
 
                 # Add the timestamp
                 buffer.open(QIODevice.WriteOnly)
@@ -800,10 +800,11 @@ class DataFile:
 
                 img_stream = BytesIO(raw_data)
                 with Image.open(img_stream) as img:
+                    mask = img.convert("RGBA")
                     pil_img.paste(img,
                                   (pil_img.width - img.width - 51,
                                    scale_top - img.height - 5),
-                                  mask = img)
+                                  mask = mask)
 
                 # Save an archive image
                 logging.debug("Saving archive image for %s", band)
