@@ -7,6 +7,7 @@ import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from oauthlib.oauth2 import BackendApplicationClient
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
 from requests_oauthlib import OAuth2Session
 from urllib.parse import urlencode, quote
 
@@ -46,26 +47,25 @@ def auth_keycloak():
             expires = datetime.utcfromtimestamp(token['expires_at'])
         except KeyError:
             expires = datetime.min
-            
+
         if expires < datetime.utcnow():
             #token has expired. See if we can refresh
             try:
                 refresh_expires = datetime.utcfromtimestamp(token['refresh_expires_at'])
             except KeyError:
                 refresh_expires = datetime.min #can't get the refresh expiration date
-            
+
             if refresh_expires > datetime.utcnow():
                 refresh = True
             else:
-                token = None 
-            
-            
+                token = None
+
     if token is None or refresh:
         # Get a new token
         data = {
             "client_id": "cdse-public",
         }
-        
+
         if refresh:
             data['grant_type'] = "refresh_token",
             data['refresh_token'] = token['refresh_token']
@@ -73,35 +73,36 @@ def auth_keycloak():
             data['grant_type'] = "password"
             data['username'] = config.SH_EMAIL,
             data['password'] = config.SH_PASSWORD
-        
+
         try:
             r = requests.post("https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token",
-            data=data,
-            )
+                              data=data,
+                              )
             r.raise_for_status()
         except Exception as e:
             raise Exception(
                 f"Keycloak token creation failed. Reponse from the server was: {r.json()}"
-                )
-        
+            )
+
         token = r.json()
         # Figure out when it expires
         # Use the response header time as the issued time
         token_time = datetime.utcnow().replace(tzinfo = timezone.utc)
         expires_time: datetime = token_time + timedelta(seconds = int(token['expires_in']))
         refresh_expires = token_time + timedelta(seconds = int(token['refresh_expires_in']))
-        
+
         token['expires_at'] = expires_time.timestamp()
         token['refresh_expires_at'] = refresh_expires.timestamp()
-        
+
         with open(token_path, 'w') as f:
             json.dump(token, f)
-    
+
     session = requests.Session()
     session.headers.update({'Authorization': f'Bearer {token["access_token"]}'})
-    
+
     return session
-       
+
+
 def auth_sentinelhub():
     oauth_secret = config.SH_OAUTH_SECRET
     oauth_id = config.SH_OAUTH_ID
@@ -169,23 +170,24 @@ def download_part(url, start, end, output):
 
 def download_sentinelhub(filename, uuid):
     session = auth_keycloak()
-    
+
     url = f"http://catalogue.dataspace.copernicus.eu/odata/v1/Products({uuid})/$value"
     response = session.get(url, allow_redirects=False)
     while response.status_code in (301, 302, 303, 307):
         url = response.headers['Location']
         response = session.get(url, allow_redirects=False)
-        
+
+    requests.urllib3.disable_warnings(InsecureRequestWarning)
     response = session.get(url, verify = False, allow_redirects = True)
     file = BytesIO(response.content)
-    
+
     # Decompress the file
     with zipfile.ZipFile(file) as f:
         datafile = next((x for x in f.namelist() if x.endswith('.nc')))
         logging.info(f"Extracting {datafile} from archive")
         with f.open(datafile) as df, open(filename + ".download", 'wb') as sf:
             sf.write(df.read())
-  
+
 
 def download_file(file_name, uuid):
     DOWNLOAD_URL = f"https://s5phub.copernicus.eu/dhus/odata/v1/Products('{uuid}')/$value"
@@ -331,22 +333,26 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
             search_params['next'] = next_val
 
         features += results_object['features']
-        
+
     names = [{'Name': x['id']} for x in features]
 
-    odata_request = {
-        "FilterProducts": names,
-    }
-    
     # We could query this API directly, but using the catalog API first allows us to use a MultiPolygon
     odata_url = 'https://catalogue.dataspace.copernicus.eu/odata/v1/Products/OData.CSC.FilterList'
-    results = requests.post(odata_url, json = odata_request)
-    results_object = results.json()
-    features = results_object['value'] #Object ID's to download
-    
+
+    batches = math.ceil(len(names) / 19)
+    features = []
+    for batch in numpy.array_split(names, batches):
+        odata_request = {
+            "FilterProducts": batch.tolist(),
+        }
+
+        results = requests.post(odata_url, json = odata_request)
+        results_object = results.json()
+        features += results_object['value'] #Object ID's to download
+
     return features, 200
 
-    
+
 def download(use_preop: bool = True):
     init_logging()
 
@@ -374,7 +380,7 @@ def download(use_preop: bool = True):
     else:
         results_object, code = get_file_list_sentinel_hub(DATE_FROM, DATE_TO)
         download_func = download_sentinelhub
-        
+
     if results_object is None:
         exit(code)
 
@@ -394,10 +400,10 @@ def download(use_preop: bool = True):
             uuid = product['Id']
             footprint = geometry.shape(product['GeoFootprint'])
             identifier = product['Name'].replace('.nc', '')
-            
+
         covered_volcs = [footprint.contains(x) for x in volc_points]
         covered_volcs = [x['name'] for x in volcanos[covered_volcs]]
-        
+
         id_parts = [x for x in identifier.split('_') if x]
         filetime = parse(id_parts[4] + "z")
         year = filetime.strftime("%Y")
