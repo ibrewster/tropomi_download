@@ -1,6 +1,8 @@
 import os
 
-from download_tropomi import get_file_list_sentinel_hub, download_sentinelhub
+import requests
+
+from download_tropomi import get_file_list_sentinel_hub, download_sentinelhub, auth_sentinelhub
 from datetime import timedelta, date
 
 import config
@@ -11,6 +13,10 @@ import numpy
 
 from dateutil.parser import parse
 from shapely import wkt, geometry
+
+from urllib.parse import urlencode, quote
+
+import requests
 
 
 if __name__ == "__main__":
@@ -39,11 +45,11 @@ if __name__ == "__main__":
 
     # setup import params
     for idx, product in enumerate(results_object):
-        footprint = geometry.shape(product['geometry'])
+        footprint = geometry.shape(product['GeoFootprint'])
         covered_volcs = [footprint.contains(x) for x in volc_points]
         covered_volcs = [x['name'] for x in volcanos[covered_volcs]]
 
-        identifier = product['id']
+        identifier = product['Name']
         id_parts = [x for x in identifier.split('_') if x]
         filetime = parse(id_parts[4] + "z")
         year = filetime.strftime("%Y")
@@ -60,11 +66,11 @@ if __name__ == "__main__":
             print("Skipping %s, we already have it.", file_name)
             continue
 
-        download_link = next((x for x in product['links'] if x['rel'] == 'self'))['href']
+        uuid = product['Id']
 
         print("Downloading %s (%d/%d)", file_name, idx + 1, file_count)
 
-        download_sentinelhub(file_name.replace('.nc', ''), download_link)
+        download_sentinelhub(file_name.replace('.nc', ''), uuid)
 
         # # Try to import the file to see if we have any valid data
         # print("Checking file for good data")
