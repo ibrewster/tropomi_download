@@ -34,7 +34,7 @@ def _get_new_row(row, altrow, idx):
     return new_row
 
 
-def _new_make_bounds(points):
+def _make_bounds(points):
     if points.min() < -360:
         # We have a fill value. Replace with NaN
         points[points == points.min()] = numpy.NaN
@@ -94,92 +94,6 @@ def _new_make_bounds(points):
     bounds[bounds < -180] += 360
     return bounds
 
-
-def _make_bounds(points):
-    """Convert a two-dimensional grid of points to a list of pixel corners"""
-    bounds = numpy.zeros((*points.shape, 4))
-
-    for idx, value in numpy.ndenumerate(points):
-        # May work for -180 to +180, depending on how dateline crossing is figured.
-        if value < -360 or value > 360:
-            # Invalid longitude.
-            bounds[idx] = (numpy.nan, ) * 4
-            continue
-        #  0 is row, 1 is column
-        ll_ref_new = (idx[0] + 1, idx[1] - 1)
-        lr_ref_new = (idx[0] + 1, idx[1] + 1)
-        ul_ref_new = (idx[0] - 1, idx[1] - 1)
-        ur_ref_new = (idx[0] - 1, idx[1] + 1)
-
-        diff_values = []
-        for ref in (ll_ref_new, lr_ref_new, ul_ref_new, ur_ref_new):
-            try:
-                if ref[0] < 0 or ref[1] < 0:
-                    # *technically* would work, just indexing from end of array,
-                    # but not the behavior we want here.
-                    # For our purposes, a negitive value is off-the-grid.
-                    raise IndexError
-                diff = points[ref] - value
-
-                # If we get a negitive when multiplying, the signs are different
-                # indicating a dateline or equator crossing.
-                # We only want to adjust if crossing the dateline (equator
-                # crossing are continuous)
-                # so also make sure the value is outside the possible range for
-                # latitude (i.e. this is longitude)
-                if points[ref] * value < 0 and (not -90 < value < 90):
-                    if diff > 0:
-                        diff -= 360  # wrap around the other way
-                    else:
-                        diff += 360
-
-            except (IndexError, ValueError):
-                # In theory we could get a value error if points[ref] is nan
-                diff = None
-
-            diff_values.append(diff)
-
-        ll_diff_new, lr_diff_new, ul_diff_new, ur_diff_new = diff_values
-
-        # Figure out any "None" values
-        if ll_diff_new is None:
-            try:
-                ll_diff_new = -1 * (ur_diff_new or ul_diff_new)
-            except TypeError:
-                # Both lower diffs are None, must be a bottom corner
-                ll_diff_new = lr_diff_new
-
-        if lr_diff_new is None:
-            try:
-                lr_diff_new = -1 * (ul_diff_new or ur_diff_new)
-            except TypeError:
-                # Both lower diffs are None, must be a bottom corner
-                lr_diff_new = ll_diff_new
-
-        if ul_diff_new is None:
-            ul_diff_new = -1 * lr_diff_new  # we made sure ur_diff was not None above
-
-        if ur_diff_new is None:
-            ur_diff_new = -1 * ll_diff_new
-
-        bounds[idx] = [value + (ul_diff_new / 2), value + (ur_diff_new / 2),
-                       value + (lr_diff_new / 2), value + (ll_diff_new / 2)]
-
-        # Clean up any "invalid" values caused by crossing the dateline
-        for idx2, lon_val in enumerate(bounds[idx]):
-            if lon_val < -180:
-                lon_val += 360
-            elif lon_val > 180:
-                lon_val -= 360
-            else:
-                # For some reason code coverage doesn't count this as getting hit normally
-                continue  # pragma: nocover
-
-            bounds[idx][idx2] = lon_val
-
-    return bounds
-
-
 DEF = {
     'INFO': {
         # The top-level attribute which we can use to identify this file type.
@@ -222,13 +136,13 @@ DEF = {
                 {
                     'NAME': 'Latitude',
                     'bin': False,
-                    'operation': _new_make_bounds,
+                    'operation': _make_bounds,
                     'DEST': 'latitude_bounds',
                 },
                 {
                     'NAME': 'Longitude',
                     'bin': False,
-                    'operation': _new_make_bounds,
+                    'operation': _make_bounds,
                     'DEST': 'longitude_bounds',
                 },
                 {
