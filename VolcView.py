@@ -570,7 +570,8 @@ class DataFile:
         for idx, alt in enumerate(heights):
             if alt != 'cloud':
                 band = self._bands[idx]
-                column = f'SO2_number_density_{alt}'
+                # VIIRS is weird... :(
+                column = f'SO2_number_density_{alt}' if self._data_type != 'VIIRS' else 'SO2_column_number_density'
                 normalized_du_col = f"normalized_du_{alt}"
 
                 mass = areas * sector_data[column]  # in moles
@@ -752,9 +753,15 @@ class DataFile:
 
                     img_stream = BytesIO(raw_data)
                     with Image.open(img_stream) as img:
-                        mask = img.convert("RGBA")
+                        img = img.convert("RGBA")
+
+                        # Make white pixels transparent
+                        data = numpy.asarray(img.getdata(), dtype = 'uint8')
+                        data[(data == (255, 255, 255, 255)).all(axis = 1)] = [255, 255, 255, 0]
+                        img = Image.fromarray(data.reshape(*reversed(img.size), 4))
+
                         scale_top = pil_img.height - img.height - 10
-                        pil_img.paste(img, (25, scale_top), mask = mask)
+                        pil_img.paste(img, (25, scale_top), mask = img)
 
                     # Add the timestamp
                     buffer.open(QIODevice.WriteOnly)
