@@ -770,11 +770,17 @@ class DataFile:
 
                     img_stream = BytesIO(raw_data)
                     with Image.open(img_stream) as img:
-                        mask = img.convert("RGBA")
+                        img = img.convert("RGBA")
+
+                        # Make white pixels transparent
+                        data = numpy.asarray(img.getdata(), dtype = 'uint8')
+                        data[(data == (255, 255, 255, 255)).all(axis = 1)] = [255, 255, 255, 0]
+                        img = Image.fromarray(data.reshape(*reversed(img.size), 4))
+
                         pil_img.paste(img,
                                       (pil_img.width - img.width - 51,
                                        scale_top - img.height - 5),
-                                      mask = mask)
+                                      mask = img)
 
                     # Save an archive image
                     logging.debug("Saving archive image for %s", band)
