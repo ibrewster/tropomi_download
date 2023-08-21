@@ -2,6 +2,7 @@ import math
 import os
 import sys
 import json
+import time
 import zipfile
 
 from concurrent.futures import ThreadPoolExecutor
@@ -26,7 +27,7 @@ from util import init_logging
 if len(sys.argv) < 2 or not sys.argv[1] == "--no-volcview":
     from VolcView import main as sendVolcView
 
-SHOW_PROGRESS = False
+SHOW_PROGRESS = True
 
 auth = HTTPBasicAuth('s5pguest', 's5pguest')
 
@@ -141,15 +142,31 @@ def download_part(url, start, end, output):
     full_size = end - start
     while True:
         with open(output, 'ab') as part_file:
-            resume_header = {'Range': f'bytes={start+part_file.tell()}-{end}', }
+            range_start = start+part_file.tell()
+            range_size = end - range_start
+            if range_size <= 0:
+                break #Segment complete
+
+            logging.info(f"Requested range {range_start} - {end}. Size: {end-range_start}")
+            resume_header = {'Range': f'bytes={range_start}-{end}', }
             download_request = requests.get(url, stream=True,
-                                            headers=resume_header, auth=auth)
+                                            headers=resume_header, auth=auth, timeout = 30)
+            print(f"Begining download with response code: {download_request.status_code}")
+            if download_request.status_code not in (200, 206):
+                retry_count += 1
+                if retry_count > 10:
+                    logging.error("Too many retries. Giving up.")
+                    raise FileNotFoundError("Unable to retrieve file part")
+                logging.error("Error downloading part %s. Incorrect status code %i. Trying agian in 30 seconds",
+                              output, download_request.status_code)
+                time.sleep(30)
+                continue
 
             for chunk in download_request.iter_content(chunk_size=4096):  # Try 4K chunk size
                 downloaded_size += len(chunk)
-                percent_complete = round((downloaded_size / full_size) * 100, 2)
+                percent_complete = round((downloaded_size / full_size) * 10000, 2)
                 if SHOW_PROGRESS and percent_complete % 1 == 0:
-                    print(f" {percent_complete}% ", end='\r')
+                    print(f" {percent_complete / 100}% ", end='\r')
                 part_file.write(chunk)
 
             if downloaded_size >= full_size:
@@ -194,8 +211,19 @@ def download_file(file_name, uuid):
 
     # Request just enough of the file to get the content-length header
     # For some reason this information is not included in a HEAD request.
+    #downloaded_size = 0
     download_request = requests.get(DOWNLOAD_URL, stream=True, auth=auth)
     total_size = int(download_request.headers['content-length'])
+    # with open(f"{file_name}.download", 'ab') as download_file:
+
+        # for chunk in download_request.iter_content(chunk_size=4096):  # Try 4K chunk size
+            # downloaded_size += len(chunk)
+            # percent_complete = round((downloaded_size / total_size) * 100, 2)
+            # if SHOW_PROGRESS and percent_complete % 1 == 0:
+                # print(f" {percent_complete}% ", end='\r')
+            # part_file.write(chunk)
+
+
     download_request.close()
 
     chunk_size = math.ceil(total_size / 4)
@@ -350,6 +378,7 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
         results_object = results.json()
         features += results_object['value'] #Object ID's to download
 
+    features.sort(key = lambda x: x['OriginDate'], reverse = True)
     return features, 200
 
 
@@ -371,8 +400,13 @@ def download(use_preop: bool = True):
     DATE_TO = to_date.strftime("%Y-%m-%d")
 
     # Look back 1 day to make sure we have everything
-    from_date = from_date - timedelta(days=3)
+    from_date = from_date - timedelta(days=5)
     DATE_FROM = from_date.strftime("%Y-%m-%d")
+
+    ######DEBUG - REMOVE#######
+    DATE_FROM = "2023-08-07"
+#    DATE_TO = "2023-07-20T11:00:00Z"
+    ###########################
 
     if use_preop:
         results_object, code = get_file_list(DATE_FROM, DATE_TO)
@@ -484,3 +518,4 @@ def download(use_preop: bool = True):
 
 if __name__ == "__main__":
     download(use_preop = False)
+

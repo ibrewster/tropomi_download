@@ -13,132 +13,70 @@ import operator as op
 import os
 import pickle
 import queue
-import sys
+#import sys
 import threading
 import time
 import warnings
 
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from glob import glob
+from copy import deepcopy
 
 import h5py
 import numpy
 import xarray
 
-from pyresample import bilinear, geometry, create_area_def
+from pyresample import geometry, create_area_def
+from pyresample.bilinear import NumpyBilinearResampler
 
+import util as utils
 
-if 'PySide2.QtWidgets' in sys.modules:
-    from PySide2.QtCore import (
-        QThread,
-        Signal,
-    )
-else:
-    logging.warning("PySide2 not found. Not reporting progress.")
+########### GLOBAL CONSTANTS ###############
+_REQUIRED_FIELDS = ('latitude', 'longitude', 'sulfurdioxide_total_vertical_column',
+                    'latitude_bounds', 'longitude_bounds', "cloud_fraction",
+                    'SO2_column_number_density_validity', 'SO2_number_density', 'SO2_column_number_density')
 
-    class QThread:
-        """
-        If PySide2 is not being used, replicate the functionality of a
-        QThread object using native python code so we can get the same
-        functionality, and use the same code.
-        """
+############################################
 
-        def __init__(self, parent = None):
-            self._thread = None
-
-        def run(self):
-            pass  # placeholder. Override in child class to actually do something.
-
-        def start(self):
-            self._thread = threading.Thread(target = self.run,
-                                            daemon = True)
-            self._thread.start()
-
-        def wait(self, timeout = None):
-            return self._thread.join(timeout)
-
-        def isRunning(self):
-            if self._thread is None:
-                return False
-
-            return self._thread.is_alive()
-
-    class Signal:
-        """
-            Signal implementation that behaves somewhat simularly to the Qt
-            signal/slot implemention, but without using Qt.
-        """
-
-        def __init__(self, *args):
-            """
-                Initalize the signal with a list of expected arg types
-            """
-            self._types = args
-            self._callbacks = []
-
-        def connect(self, fcn):
-            """
-                "connect" a function to this signal to be called when this
-                signal is emitted.
-            """
-            self._callbacks.append(fcn)
-
-        def emit(self, *args):
-            """
-                "Emit" a signal by calling the associated callback function(s)
-                with the provided args.
-            """
-            for callback in self._callbacks:
-                callback(*args)
-
-
-class _Signaller(QThread):
+def flatten_data(data):
     """
-    Signal handler to mediate/pass messages between the
-    loading process and the main application.
+        Take a N-dimensional data structure, and "flatten" it to a
+        N-1 dimensional structure
+
+        Parameters
+        ----------
+        data : dictionary
+            A data dictonary, containing one or more data structures to be
+            flattened
+
+        Returns
+        -------
+        data : dictionary
+            The dictionary of data, with the flattened data structures
     """
-    progress = Signal(float)
-    status = Signal(str, int, int)
-    load_queue = None
-    _instance = None
+    # Flatten the x-y data into a simple time-series type data
+    data = data.stack(time = ["x", "y"]).reset_index('time', drop = True)
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._final = 0
+    # Get the mean of the data across the "file" dimension
+    try:
+        data = data.mean('file')
+    except ValueError:
+        pass  # No file dimension - only one file, no need to average anything.
 
-    def set_final(self, final):
-        self._final = final
+    # make sure the dimensions are in the correct order
+    args = ['time', 'corners']
+    if 'layer' in data.dims:
+        args.append('layer')
+    data = data.transpose(*args)
 
-    def run(self):
-        prog = 0
-        while True:
-            try:
-                msg = _PROGRESS_QUEUE.get(timeout=.25)
-            except queue.Empty:
-                if _TERM_FLAG.is_set():
-                    logging.debug("Exiting progress thread due to cancel")
-                    break
-            else:
-                if msg == "QUIT":
-                    logging.debug("Exiting progress thread due to QUIT")
-                    break
-                if msg == 'PROGRESS':
-                    prog += 1
-                    self.progress.emit((prog / self._final) * 100)
-                if isinstance(msg, (list, tuple)) and msg[0] == 'STATUS':
-                    self.status.emit(msg[1], -1, 0)
-
-
-# We need a QObject instance in order to be able to dispatch Qt Signals
-signaller = _Signaller()
-
+    return data
 
 def _load_formats():
     # Get a list of .py files from the file_formats directory adjacent to this file.
     # These files contain definitions of how to import data from various file types
     # into the format we expect.
-    # File definition files MUST contain a __TYPE__ variable, (typically the first
-    # four characters of the file name for the files it handles), and a DEF
+    # File definition files MUST contain a __TYPE__ variable, and a DEF
     # dictionary containing the import parameters (fields, info, etc)
     file_defs = {}
 
@@ -155,31 +93,55 @@ def _load_formats():
     return file_defs
 
 
-_PROGRESS_QUEUE = None
-_TERM_FLAG = multiprocessing.Event()
+def _get_pointtimes(file_def, file_xa, h5_file, filepath, data_size, data_shape):
+    pt_group = file_def['INFO']['point_time']['GROUP']
+    pt_name = file_def['INFO']['point_time']['NAME']
+    from_name = file_def['INFO']['point_time'].get('from_name')
+    point_time_data = numpy.asarray(h5_file[pt_group][pt_name])
+    if from_name:
+        filename = os.path.basename(filepath)
+        point_time = from_name(filename)
+        point_time_data = numpy.full(point_time_data.shape, point_time)
+
+    time_op = file_def['INFO']['point_time'].get('operation')
+    if time_op:
+        point_time_data = time_op(point_time_data)
+
+    file_time_group = file_def['INFO'].get('file_time', {}).get('GROUP')
+    if file_time_group:
+        file_time_name = file_def['INFO'].get('file_time', {}).get('NAME')
+        file_time_path = f"{file_time_group}/{file_time_name}"
+
+        file_time = h5_file[file_time_path][0]
+        file_time_op = file_def['INFO'].get('file_time', {}).get('operation')
+        file_time = file_time_op(file_time)
+
+        point_time_data = point_time_data + file_time  # Now an actual timestamp value
+
+    if point_time_data.size != data_size:
+        # raise ValueError("Data sizes don't match!")
+        num_repeat = data_size / point_time_data.size
+        point_time_data = numpy.repeat(point_time_data, num_repeat).reshape(data_shape)
+
+    point_time_data = point_time_data.squeeze()
+    file_xa.coords['datetime_start'] = (["y", "x"], point_time_data)
 
 
-def _init_file_load_process(sig_queue, prog_queue, term_flag):
-    """
-        Initalize some global variables for use when multiprocessing.
-        By being global, they can be populated when initallizing the process,
-        and are available to all functions run in the process, including things
-        like map() that can't take extra arguments.
-    """
-    # These items must be declared globally for multiprocessing purposes -
-    # we can't just pass them to the function.
-    # pylint: disable=global-statement
-    global _PROGRESS_QUEUE
-    global _TERM_FLAG
+def _load_file_data(file_def, filepath, fields: tuple = _REQUIRED_FIELDS):
+    # if fields is None when called, use the minimal list of required fields
+    # if fields is None when running, then use all fields.
+    if fields is None:
+        fields = _REQUIRED_FIELDS
+    elif fields == 'ALL':
+        fields = None
+    # If a list of fields is supplied, make sure latitude is one of them
+    # as we use that for other purposes.
+    elif 'latitude' not in fields:
+        fields = tuple(fields) + ('latitude', )
 
-    _PROGRESS_QUEUE = prog_queue
-    _TERM_FLAG = term_flag
-    signaller.load_queue = sig_queue
-
-
-def _load_file_data(file_def, filepath):
     file_xa = xarray.Dataset()
     h5_file = h5py.File(filepath, 'r')
+
     # Find the latitude entry to get the data size
     field = {}  # Make the linter happy by making sure these are defined.
     group = {}
@@ -199,6 +161,7 @@ def _load_file_data(file_def, filepath):
             group_name = group['GROUP']
             field_name = field['NAME']
             data_size = h5_file[f"/{group_name}/{field_name}"].size
+            data_shape = h5_file[f"/{group_name}/{field_name}"].shape
         else:
             raise KeyError("Latitude not found in file def")
     except KeyError as err:
@@ -207,87 +170,56 @@ def _load_file_data(file_def, filepath):
         return {}
 
     # Generate the time array
-    pt_group = file_def['INFO']['point_time']['GROUP']
-    pt_name = file_def['INFO']['point_time']['NAME']
-    from_name = file_def['INFO']['point_time'].get('from_name')
-    point_time_data = numpy.asarray(h5_file[pt_group][pt_name])
-    if from_name:
-        filename = os.path.basename(filepath)
-        point_time = from_name(filename)
-        point_time_data = numpy.full(point_time_data.shape, point_time)
-
-    point_time_data = point_time_data.flatten()
-
-    time_op = file_def['INFO']['point_time'].get('operation')
-    if time_op:
-        point_time_data = time_op(point_time_data)
-
-    file_time_group = file_def['INFO'].get('file_time', {}).get('GROUP')
-    if file_time_group:
-        file_time_name = file_def['INFO'].get('file_time', {}).get('NAME')
-        file_time_path = f"{file_time_group}/{file_time_name}"
-
-        file_time = h5_file[file_time_path][0]
-        file_time_op = file_def['INFO'].get('file_time', {}).get('operation')
-        if file_time_op:
-            file_time = file_time_op(file_time)
-
-        point_time_data = point_time_data + file_time  # Now an actual timestamp value
-
-    if point_time_data.size != data_size:
-        num_repeat = data_size / point_time_data.size
-        point_time_data = numpy.repeat(point_time_data, num_repeat)
-
-    file_xa.coords['datetime_start'] = ("time", point_time_data)
+    _get_pointtimes(file_def, file_xa, h5_file, filepath, data_size,
+                    data_shape)
 
     # Fetch desired data from file
-    group_spec = ((g['GROUP'], f) for g in file_def['GROUPS'] for f in g['FIELDS'])
+    group_spec = (
+        (g['GROUP'], f)
+        for g in file_def['GROUPS']
+        for f in g['FIELDS']
+    )
+
     spec_fill = file_def['INFO'].get('fillvalue')  # May be none
+
     for group, spec in group_spec:
         field = spec.get('DEST', spec['NAME'])
-
-        try:
-            kill = signaller.load_queue.get_nowait()
-        except (queue.Empty, AttributeError):
-            pass  # Nothng to get
-        else:
-            if kill:
-                _TERM_FLAG.set()
-
-        if _TERM_FLAG.is_set():
-            h5_file.close()
-            return {}
+        if fields is not None and not field.startswith(fields):
+            logging.debug(f"Skipping {field} as it is not in the requested list")
+            continue
 
         path = f"{group}/{spec['NAME']}"
-        field_data = numpy.asarray(h5_file[path])
+        try:
+            field_data = numpy.asarray(h5_file[path]).squeeze()
+        except (KeyError, OSError) as e:
+            logging.error(f"Unable to load field {path} due to error: {e}")
+            continue # Key not in file, or unable to read data.
+
         fill_value = spec_fill or h5_file[path].fillvalue
-        if fill_value is not None:
-            try:
-                field_data[field_data == fill_value] = numpy.nan
-            except ValueError:
-                pass
+        try:
+            field_data[field_data == fill_value] = numpy.nan
+        except ValueError:
+            pass
 
         isinstance(field_data, numpy.ndarray)
         if 'operation' in spec:
             field_data = spec['operation'](field_data)
 
-        flat_shape = (-1, *field_data.shape[file_def['INFO']['nDims']:])
-        field_data.shape = flat_shape
+        # flat_shape = (-1, *field_data.shape[file_def['INFO']['nDims']:])
+        # field_data.shape = flat_shape
 
-        dim = ["time"]
-        if len(flat_shape) > 1:
-            dim.append('corners')
+        dim = ["y", "x"] if len(field_data.shape) > 1 else ['layer']
+        if len(field_data.shape) > 2:
+            if field_data.shape[2] == 4:
+                dim.append('corners')
+            else:
+                dim.append('layer')
 
         if field in ['latitude', 'longitude',
                      'latitude_bounds', 'longitude_bounds']:
             file_xa.coords[field] = (dim, field_data)
         else:
             file_xa[field] = (dim, field_data)
-
-        try:
-            _PROGRESS_QUEUE.put('PROGRESS')
-        except AttributeError:
-            pass
 
     return file_xa
 
@@ -315,7 +247,7 @@ def _parse_filters(filters):
                 operator += char
                 continue
 
-            if section == 1:
+            elif section == 1:
                 # Working on the operator. NON alpha numeric only
                 if char in ['>', '<', '=']:
                     operator += char
@@ -324,7 +256,7 @@ def _parse_filters(filters):
                 section = 2
                 # We are now on the value
                 value += char
-            elif section == 2:
+            else: # section == 2
                 # remainder of the string is the value. Could short-circuit by using enum,
                 # and slicing once we got here. Probably not worth the optimization though.
                 value += char
@@ -335,6 +267,59 @@ def _parse_filters(filters):
     return result
 
 
+def get_filetype(file: str) -> tuple[str, dict]:
+    FILE_DEFS = _load_formats()
+    ftype = fdef = None  # Will be over-written by the for loop
+
+    with h5py.File(file, 'r') as f:
+        for ftype, fdef in FILE_DEFS.items():
+            try:
+                field_defs = [
+                    fld_lst.get('GROUP') + "/" + fld.get('NAME')
+                    for fld_lst in fdef['GROUPS']
+                    for fld in fld_lst['FIELDS']
+                ]
+            except TypeError:
+                field_defs = ['/invalid/field']
+
+            ident_attr = fdef.get('INFO', {}).get('ident_attr', {}).get('NAME')
+
+            # See if we can make a positive identification based on file attributes.
+            if ident_attr is not None and ident_attr != "NoATTR":
+                ident_val = fdef.get('INFO', {}).get('ident_attr', {}).get('VALUE')
+                if f.attrs.get(ident_attr, 'NoValue') == ident_val:
+                    logging.info(f"Detected file of type {ftype} based on attribute match")
+                    break  # Yay! We found the correct file format!
+                else:
+                    # ident attrs don't match, this is not the file format we are looking for.
+                    continue
+
+            # But maybe we aren't expecting *any* attributes in the file.
+            if ident_attr == 'NoATTR':
+                # If we specify NoATTR, that means that this file format should have no
+                # attributes in the file. If the file *does* have attributes, then, we
+                # can positively say it is not this format, and move on.
+                if len(f.attrs) != 0:
+                    continue
+
+            # At this point, we either have no attributes, and are expecting none, or we don't
+            # have an identifying attribute listed. Fall back to checking for fields.
+            for field in field_defs:
+                if not field in f or field is None:
+                    break  # breaks the inner loop, so the else clause does not trigger.
+            else:
+                # All Fields match! We found our file and can break this outter loop!
+                logging.warning(f"Guessing file type of {ftype} based on field matching")
+                break
+
+        else:
+            logging.error("Unable to identify file type")
+            raise TypeError("Unable to identify file type")
+
+    # Return a COPY of the filedef to avoid accidentally changing the original at any point
+    return (ftype, deepcopy(fdef))
+
+
 class NetCDFFile:
     _filter_ops = {
         ">": op.gt,
@@ -343,8 +328,6 @@ class NetCDFFile:
         "<=": op.le,
         "<": op.lt,
     }
-
-    _FILE_DEFS = _load_formats()
 
     def __init__(self, files = None):
         self._files = []
@@ -360,7 +343,6 @@ class NetCDFFile:
 
     def __exit__(self, *args, **kwargs):
         del self._file_data
-        self._file_data = None
 
     def configure(self, files):
         """
@@ -380,31 +362,13 @@ class NetCDFFile:
             else:
                 self._files.append(filespec)
 
-        with h5py.File(self._files[0], 'r') as f:
-            for ftype, fdef in self._FILE_DEFS.items():
-                ident_attr = fdef.get('INFO', {}).get('ident_attr', {}).get('NAME')
+        _, fdef = get_filetype(self._files[0])
 
-                if ident_attr == 'NoATTR' and len(f.attrs) == 0:
-                    # No attributes in file
-                    break
-
-                if ident_attr is None:
-                    continue
-                ident_val = fdef.get('INFO', {}).get('ident_attr', {}).get('VALUE')
-                if f.attrs.get(ident_attr, 'NoValue') == ident_val:
-                    break
-            else:
-                raise TypeError("Unable to identify file type")
-
-            # Look for the identifying attr.
-            # We key off the first four characters of the file name. Scary, but file names are documented, so...
-
-        self._file_type = ftype
         self._file_def = fdef
 
         self._fields = [
             fld.get('DEST', fld['NAME'])
-            for fld_lst in self._file_def['GROUPS']
+            for fld_lst in fdef['GROUPS']
             for fld in fld_lst['FIELDS']
         ]
 
@@ -416,9 +380,7 @@ class NetCDFFile:
             if fld.get('bin', True)
         ]
 
-        return self._file_type
-
-    def import_data(self, filters=None, options=None):
+    def import_data(self, filters, options, fields = None):
         """
             Main function of this class, given a list of files, filters, and
             options, import the data from the specified file(s) into a
@@ -440,12 +402,6 @@ class NetCDFFile:
                 A xarray of data loaded from the specified file(s) and
                 filtered with the specified filter(s)
         """
-        _TERM_FLAG.clear()
-        signaller.load_queue = multiprocessing.Queue()
-
-        global _PROGRESS_QUEUE
-        _PROGRESS_QUEUE = multiprocessing.Queue()
-
         if self._file_data:
             del self._file_data
             self._file_data = None
@@ -514,13 +470,16 @@ class NetCDFFile:
 
         # From here on, we need to make sure this thread is told to quit at any point we
         # might exit this function, whether due to error or intent.
-        signaller.set_final(total_steps)
-        if not signaller.isRunning():
-            signaller.start()
+
+        # Get a list of fields required for filters. Will add some bogus entries, but it works
+        # Because we simply ask if a field in the file is included in this list, so extra
+        # entries don't cause problems.
+        if fields is None:
+            filter_fields = (x[0] for x in filters)
+            fields = tuple(filter_fields) + _REQUIRED_FIELDS
 
         try:
-            # Estimate array size
-            load_file_data = partial(_load_file_data, self._file_def)
+            load_file_data = partial(_load_file_data, self._file_def, fields = fields)
             num_files = len(self._files)
 
             if num_files == 1:
@@ -532,11 +491,7 @@ class NetCDFFile:
                 # Thread pool is about 25% slower in testing, but still faster
                 # than non-threaded.
                 try:
-                    pool = multiprocessing.Pool(process_count,
-                                                initializer = _init_file_load_process,
-                                                initargs = (signaller.load_queue,
-                                                            _PROGRESS_QUEUE,
-                                                            _TERM_FLAG))
+                    pool = multiprocessing.Pool(process_count)
                 except AssertionError:
                     # Use threads (multiprocessing.dummy)
                     pool = mpd.Pool(process_count)
@@ -544,87 +499,20 @@ class NetCDFFile:
                 all_data = pool.imap(load_file_data, self._files)
                 pool.close()
 
-            self._file_idxs = []
-            data_size = 0
-            for file_data in all_data:
-                if _TERM_FLAG.is_set():
-                    try:
-                        pool.join()  # wait for the processes to exit cleanly
-                    except UnboundLocalError:
-                        pass  # not using a pool
+            self._file_data = list(all_data)
 
-                    signaller.wait(200)  # also make sure our progress thread is dead.
-                    if signaller.isRunning():
-                        signaller.terminate()
-                    del _PROGRESS_QUEUE
-                    del signaller.load_queue
-                    logging.warning("Exiting load thread due to cancel")
-                    return {}
+            if not self._file_data or not self._file_data[0]:
+                data_size = 0
+            else:
+                data_size = sum([x.sizes['x'] * x.sizes['y'] for x in self._file_data])
 
-                if not file_data:
-                    continue  # no data from this file
-
-                # Try to filter this file
-                for filter_ in filters:
-                    # Two types of filters: function filters like bin_spatial()
-                    # and data filters like latitude<50
-                    if isinstance(filter_, str):
-                        func, args = filter_.split("(")
-                        if func == 'bin_spatial':
-                            break  # We can't bin until we have all the data, so we have to stop here.
-                        # remove the closing parenthasis. Could probably do a chop
-                        # as well.
-                        args = args.replace(")", '')
-                        args = args.split(",")
-                        func = "_" + func
-
-                        # Will throw an error if func is not defined
-                        # better be a function that takes the proper arguments
-                        getattr(self, func)(*args, file_data)
-                    else:
-                        file_data = self._apply_filter(*filter_, file_data)
-
-                if not file_data or file_data['datetime_start'].size == 0:
-                    continue  # no data from this file after filtering
-
-                # Concatenate this file data with any existing data
-                if self._file_data is None:
-                    self._file_data = file_data
-                else:
-                    self._file_data = xarray.concat([self._file_data, file_data],
-                                                    "time")
-
-                data_size += file_data.sizes['time']
-                self._file_idxs.append(data_size)
-
-                _PROGRESS_QUEUE.put('PROGRESS')
-
-            if self._file_data is None or 'latitude' not in self._file_data:
-                _PROGRESS_QUEUE.put("QUIT")
-                signaller.wait()  # wait for exit
+            if data_size == 0:
                 return {}  # No data matching filters in these files
-
-            signaller.status.emit("Applying Filters...", -1, 0)
 
             # We have our data loaded. Apply filters in order provided.
             # We need to apply again here so we can grid, if needed, and do
             # anything that comes after the gridding.
             for filter_ in filters:
-                #  See if we need to stop
-                try:
-                    kill = signaller.load_queue.get_nowait()
-                except queue.Empty:
-                    pass  # Nothng to get
-                else:
-                    if kill is True:
-                        _TERM_FLAG.set()
-
-                # In case it was set elsewhere
-                if _TERM_FLAG.is_set():
-                    _PROGRESS_QUEUE.put("QUIT")
-                    signaller.wait()  # wait for exit
-                    return {}
-
                 # Two types of filters: function filters like bin_spatial()
                 # and data filters like latitude<50
                 if isinstance(filter_, str):
@@ -641,64 +529,34 @@ class NetCDFFile:
                 else:
                     self._apply_filter(*filter_)
 
-                _PROGRESS_QUEUE.put('PROGRESS')
-
-            _PROGRESS_QUEUE.put("QUIT")
-            signaller.wait()  # wait for exit
-
-            # In case it was set elsewhere
-            if _TERM_FLAG.is_set():
-                return {}
         except Exception as e:
             logging.exception("Error when loading file:\n")
             # yes, we want to catch anything, because we need to make sure the
             # thread exits cleanly. No exceptions. Even something like a keyboard interupt
-            _PROGRESS_QUEUE.put("QUIT")
-            # set the term flag as well, just to make sure the message gets through.
-            # Probably overkill.
-            _TERM_FLAG.set()
-            signaller.wait()  # wait for exit
             raise
 
-        return self._file_data
-
-    def _update_file_idxs(self, data_filter):
-        new_idxs = []
-        for idx, stop in enumerate(self._file_idxs):
-            if idx == 0:
-                start = 0
-                new_start = 0
+        if isinstance(self._file_data, (list, tuple)):
+            if len(self._file_data) == 1:
+                self._file_data = self._file_data[0]
             else:
-                start = self._file_idxs[idx - 1]
-                new_start = new_idxs[idx - 1]
+                raise ValueError("Multiple files found, but not stacking")
 
-            point_count = numpy.count_nonzero(data_filter[start:stop])
-            new_stop = new_start + point_count
-            new_idxs.append(new_stop)
-
-        # See if we start with zero
-        while new_idxs and new_idxs[0] == 0:
-            # Empty first file
-            del new_idxs[0]
-
-        # Eliminate duplicates by passing through a dictionary
-        self._file_idxs = list(dict.fromkeys(new_idxs))
+        return self._file_data
 
     def _apply_filter(self, field, operator, value, data = None):
         if data is None:
             data = self._file_data
 
-        _data_filter = self._filter_ops[operator](data[field], value)
+        if not isinstance(data, (list, tuple)):
+            data = [data, ]
 
-        if _data_filter.all():
-            return data  # Not removing any data, no need to go further.
+        for idx, file in enumerate(data):
+            _data_filter = self._filter_ops[operator](file[field], value)
 
-        # Adjust file stops
-        if data is self._file_data:
-            self._update_file_idxs(_data_filter)
-            self._file_data = data = data.where(_data_filter, drop = True)
-        else:
-            data = data.where(_data_filter, drop = True)
+            if _data_filter.all():
+                continue  # Not removing any data, no need to go further.
+
+            data[idx] = file.where(_data_filter, drop = True)
 
         return data
 
@@ -708,15 +566,13 @@ class NetCDFFile:
             data = self._file_data
             set_self = True
 
-        _data_filter = ~numpy.isnan(data[key])
+        for idx, file in enumerate(data):
+            _data_filter = ~numpy.isnan(file[key])
 
-        if _data_filter.all():
-            return  # Not removing any data, no need to go further.
+            if _data_filter.all():
+                return  # Not removing any data, no need to go further.
 
-        if data is self._file_data:
-            self._update_file_idxs(_data_filter)
-
-        data = data.where(_data_filter, drop = True)
+            data[idx] = file.where(_data_filter, drop = True)
         if set_self:
             self._file_data = data
 
@@ -733,10 +589,10 @@ class NetCDFFile:
         lon_to = float(lon_to)
 
         if lon_from < -180:
-            lon_from = (lon_from + 360)
+            lon_from += 360
 
         if lon_to > 180:
-            lon_to = -1 * (360 - lon_to)
+            lon_to -= 360
 
         if lon_from > lon_to:
             lon_from = [lon_from, -180]
@@ -745,23 +601,34 @@ class NetCDFFile:
             lon_from = [lon_from]
             lon_to = [lon_to]
 
-        filters = []
-        longitude_data = data['longitude']
-        for start, stop in zip(lon_from, lon_to):
-            filters.append(numpy.logical_and(longitude_data >= start, longitude_data <= stop))
+        for idx, file in enumerate(data):
+            filters = []
+            longitude_data = file['longitude']
+            for start, stop in zip(lon_from, lon_to):
+                filters.append((longitude_data >= start) & (longitude_data <= stop))
 
-        if len(filters) > 1:
-            _data_filter = numpy.logical_or(*filters)
-        else:
-            _data_filter = filters[0]
+            if len(filters) > 1:  # if not one, then two.
+                _data_filter = numpy.logical_or(*filters)
+            else:
+                _data_filter = filters[0]
 
-        if _data_filter.all():
-            return  # Not removing any data, no need to go further.
+            if _data_filter.all():
+                continue
 
-        if data is self._file_data:
-            self._update_file_idxs(_data_filter)
+            # Have to do this somewhat cludigly, to make everything work.
+            file = file.where(_data_filter)
+            for item in file.coords:
+                file.coords[item] = file[item].where(_data_filter)
 
-        data = data.where(_data_filter, drop = True)
+            # drop what we can
+            slim_file = file.where(_data_filter, drop = True)
+
+            # and replace the coordinates that were inexplicably removed by that operation
+            for item in file.coords:
+                slim_file.coords[item] = file[item].where(_data_filter, drop = True)
+
+            data[idx] = slim_file
+
         if set_self:
             self._file_data = data
 
@@ -769,13 +636,6 @@ class NetCDFFile:
 
     def _bin_spatial(self, num_lat, lat_from, lat_step, num_lon, lon_from, lon_step,
                      proj=None):
-        # When loading file, keep list of indexes for each data file. Then bin in chunks, with each
-        # chunk becoming a layer in the result data set.
-
-        if 'SO2_column_number_density_validity' in self._file_data:
-            # Validity is not valid for gridded data.
-            del self._file_data['SO2_column_number_density_validity']
-
         # Make sure everything is correctly typed
         num_lat = int(num_lat) - 1
         lat_from = float(lat_from)
@@ -787,12 +647,6 @@ class NetCDFFile:
         lon_step = float(lon_step)
         lon_to = lon_from + (num_lon * lon_step)
 
-        if lon_to > 180:
-            # Shift 360 degrees. With my changes, pyresample can cross the dateline to the
-            # negitive, but not to the positive.
-            lon_from -= 360
-            lon_to -= 360
-
         # try gridding the data
         area_extent = (lon_from, lat_from,
                        lon_to, lat_to)
@@ -800,7 +654,7 @@ class NetCDFFile:
         if isinstance(proj, str):
             proj = pickle.loads(bytes.fromhex(proj))
 
-        proj_dict = proj if proj else {'proj': 'lonlat', 'over': True, 'preserve_units': False, }
+        proj_dict = proj or {'proj': 'lonlat', 'over': True, 'preserve_units': False, }
         target_def = create_area_def("Binned", proj_dict, area_extent=area_extent,
                                      shape=(num_lat, num_lon))
 
@@ -826,101 +680,127 @@ class NetCDFFile:
         # Pre-allocate memory for final result
         binned_file_data = None
 
-        results = []
-        for file_idx, stop in enumerate(self._file_idxs):
-            try:
-                kill = signaller.load_queue.get_nowait()
-            except queue.Empty:
-                pass  # Nothng to get
-            else:
-                if kill:
-                    _TERM_FLAG.set()
+        radius = self._file_def.get('INFO', {}).get('binRadius', 5e4)
 
-            if _TERM_FLAG.is_set():
-                return
+        if not isinstance(self._file_data, (list, tuple)):
+            self._file_data = [self._file_data]
 
-            if file_idx == 0:
-                start = 0
-            else:
-                start = self._file_idxs[file_idx - 1]
+        num_files = len(self._file_data)
+        steps = num_files * (len(self._to_bin) * 2) + num_files
+        step = 0
+        filenum = 1
 
-            results.append(self._bin_file((start, stop), target_def))
+        t_start = time.time()
+        for file in self._file_data:
+            if file.sizes['x'] == 0 or file.sizes['y'] == 0:
+                step += len(self._to_bin) * 2 + 1
+                filenum += 1
+                continue  # No data in this file to process.
 
-        for idx, binned_data in enumerate(results):
-            signaller.status.emit(f"Stacking Data ({idx}/{len(self._file_idxs)})...",
-                                  idx, len(self._file_idxs))
-            binned_data.coords['latitude'] = (('x', 'y'), target_lats)
-            binned_data.coords['longitude'] = (('x', 'y'), target_lons)
-            binned_data.coords['latitude_bounds'] = (('x', 'y', 'corners'), lats)
-            binned_data.coords['longitude_bounds'] = (('x', 'y', 'corners'), lons)
+            target_file = xarray.Dataset()
 
+            # Figure the start and duration of this file
+            # Don't assume sorted, though probably is
+            file_timerange = file['datetime_start']
+            start_datetime = file_timerange.min()
+            stop_datetime = file_timerange.max()
+
+            target_file.coords['datetime_start'] = start_datetime
+            target_file.coords['datetime_length'] = stop_datetime - start_datetime
+
+            if 'SO2_column_number_density_validity' in file:
+                # Validity is not valid for gridded data.
+                del file['SO2_column_number_density_validity']
+
+            source_def = geometry.SwathDefinition(lons=file['longitude'],
+                                                  lats = file['latitude'])
+
+            resampler = None
+            futures = []
+            max_workers = None # Or None
+            with ThreadPoolExecutor(max_workers = max_workers) as executor:
+                for key in self._to_bin:
+                    step += 1
+
+                    if not key in file:
+                        step += 1 # Add one for the "processing" step
+                        continue
+
+                    # target_file[key] = (file[key].dims, resampler.resample(file[key].data,
+                        # fill_value=numpy.nan,
+                        # ))
+                    resample_data = file[key].data
+
+                    # We need the data to be float type so we can have NaN values
+                    if resample_data.dtype in (int, numpy.dtype('int32')):
+                        resample_data = resample_data.astype(float)
+
+                    future = executor.submit(run_resample, source_def, target_def,
+                                             radius, resample_data)
+                    futures.append((key, future))
+
+                for key, future in futures:
+                    step += 1
+
+                    try:
+                        target_file[key] = (file[key].dims, future.result())
+                    except Exception as e:
+                        logging.warning(f"Got error when binning {key}. Trying again...")
+                        logging.debug(f"Error: {e}")
+
+                        # hopefully we never need this, so only create it if we actually do
+                        if resampler is None:
+                            resampler = NumpyBilinearResampler(source_def, target_def, radius)
+
+                        resample_data = file[key].data
+                        if resample_data.dtype in (int, numpy.dtype('int32')):
+                            resample_data = resample_data.astype(float)
+                        target_file[key] = (
+                            file[key].dims,
+                            resampler.resample(resample_data, fill_value = numpy.nan)
+                        )
+
+            target_file.coords['latitude'] = (('y', 'x'), target_lats)
+            target_file.coords['longitude'] = (('y', 'x'), target_lons)
+            target_file.coords['latitude_bounds'] = (('y', 'x', 'corners'), lats)
+            target_file.coords['longitude_bounds'] = (('y', 'x', 'corners'), lons)
             if binned_file_data is None:
-                binned_file_data = binned_data
+                binned_file_data = target_file
             else:
-                binned_file_data = xarray.concat([binned_file_data, binned_data], 'file')
+                bfd_keys = set(binned_file_data.keys())
+                tf_keys = set(target_file.keys())
+
+                # Delete any variables that exist in the binend file data, but not the target file
+                for key in bfd_keys - tf_keys:
+                    del binned_file_data[key]
+
+                # And the same for the reverse
+                for key in tf_keys - bfd_keys:
+                    del target_file[key]
+
+                binned_file_data = xarray.concat([binned_file_data, target_file], 'file', compat = "no_conflicts")
+
+            step += 1
+            filenum += 1
 
         self._file_data = binned_file_data
-
-    def _bin_file(self, src_range, target_def):
-        source_def = geometry.SwathDefinition(lons=self._file_data['longitude'][src_range[0]:src_range[1]],
-                                              lats=self._file_data['latitude'][src_range[0]:src_range[1]])
-        nan_slice = False
-
-        try:
-            with warnings.catch_warnings():
-                warnings.filterwarnings('ignore')
-                radius = self._file_def.get('INFO', {}).get('binRadius', 5e4)
-                (t_params,
-                 s_params,
-                 input_idxs,
-                 idx_ref) = bilinear.get_bil_info(source_def,
-                                                  target_def,
-                                                  radius=radius)
-            # valid_input_index, valid_output_index, index_array, distance_array = \
-            #    kd_tree.get_neighbour_info(source_def, target_def, 5000, neighbours=1)
-        except (IndexError, ValueError):
-            # No data from this file falls within the slice
-            nan_slice = True
-
-        # create target file data
-        target_file = xarray.Dataset()
-
-        # rebin any data needing rebinned.
-        all_keys = [key for key in self._file_data if key in self._to_bin]
-        for key in all_keys:
-            if nan_slice:
-                binned_data = numpy.full(target_def.shape, numpy.nan,
-                                         dtype=float,)
-            else:
-                with warnings.catch_warnings():
-                    warnings.filterwarnings('ignore')
-                    key_data = self._file_data[key][src_range[0]:src_range[1]].data
-                    binned_data = bilinear.get_sample_from_bil_info(key_data,
-                                                                    t_params, s_params, input_idxs, idx_ref,
-                                                                    output_shape=target_def.shape)
-            dim = ('x', 'y')
-            if len(binned_data.shape) == 3:
-                dim += ('corners')
-            target_file[key] = (dim, binned_data)
-
-        # Figure the start and duration of this file
-        # Don't assume sorted, though probably is
-        file_timerange = self._file_data['datetime_start'][src_range[0]:src_range[1]]
-        start_datetime = file_timerange.min()
-        stop_datetime = file_timerange.max()
-
-        target_file.coords['datetime_start'] = start_datetime
-        target_file.coords['datetime_length'] = stop_datetime - start_datetime
-
-        return target_file
+        logging.debug(f"Completed binning in {time.time()-t_start} seconds")
+        logging.debug("Completed %d steps (of %d)", step, steps)
 
 
-def import_product(files, filters=None, options=None):
+def run_resample(source_def, target_def, radius, data):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        resampler = NumpyBilinearResampler(source_def, target_def, radius)
+        return resampler.resample(data, fill_value = numpy.nan)
+
+
+def import_product(files, filters=None, options=None, fields = None):
     with NetCDFFile(files) as file:
-        return file.import_data(filters, options)
+        return file.import_data(filters, options, fields = fields)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__": #pragma: nocover
     # Test code when calling this file directly. Feel free to modify to make
     # your own test cases
     START = time.time()
