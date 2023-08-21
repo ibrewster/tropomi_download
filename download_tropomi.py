@@ -195,8 +195,18 @@ def download_sentinelhub(filename, uuid):
         response = session.get(url, allow_redirects=False)
 
     requests.urllib3.disable_warnings(InsecureRequestWarning)
-    response = session.get(url, verify = False, allow_redirects = True)
-    file = BytesIO(response.content)
+    response = session.get(url, verify = False, allow_redirects = True, stream = True)
+    full_size = int(response.headers['Content-Length'])
+    downloaded_size = 0
+    file = BytesIO()
+    last_percent = 0
+    for chunk in response.iter_content(chunk_size = 4096):
+        downloaded_size += len(chunk)
+        percent_complete = int(round((downloaded_size / full_size) * 100))
+        if SHOW_PROGRESS and percent_complete != last_percent:
+            last_percent = percent_complete
+            print(f" {int(round(percent_complete))}% ", end='\r')
+        file.write(chunk)
 
     # Decompress the file
     with zipfile.ZipFile(file) as f:
