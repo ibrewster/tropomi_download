@@ -51,7 +51,7 @@ from GradientScale import GradientWidget
 from h5pyimport import import_product, flatten_data
 from util import init_logging
 
-DEBUG = False
+DEBUG = True
 
 class DBCursor():
     _conn = None
@@ -77,6 +77,8 @@ class DBCursor():
 
         self._conn.close()
 
+def error_callback(err):
+    print(f"Got error: {err}")
 
 def PolyArea(x, y):
     """Calculate the area of a polygon using native numpy math and the shoelace formula
@@ -146,12 +148,6 @@ LAT_LON_PROJ = pyproj.Proj('epsg:4326', preserve_units=False)
 def _initalize_image_widgets(file_date, band, dtype):
     """Set up the various QT widgets used to display the plot"""
     # Set up display widgets
-    try:
-        QApplication(sys.argv + ['-platform', 'offscreen'])  # So we can make widgets :)
-    except RuntimeError as err:
-        if "singleton" not in str(err):
-            raise
-
     pg.setConfigOptions(background='#EEE', foreground='k')
 
     scale_font = QFont("Arial", 10)
@@ -280,6 +276,7 @@ class DataFile:
     _view_extents = None
     _proj_str = ''
     _laea_transformer = None
+    _percentile_levels = (90, 95, 97, 99, 100)
 
     def __init__(self, data_file, sectors = config.VOLCVIEW_SECTORS):
         # Check some values
@@ -316,6 +313,7 @@ class DataFile:
             file_date_info = self._file_name[1:14]
             file_date = datetime.strptime(file_date_info, '%Y%j%H%M%S')
 
+
         self._file_date = file_date.replace(tzinfo =pytz.UTC)
 
         # Initalize some constants
@@ -328,6 +326,7 @@ class DataFile:
                                           (255, 19, 0),
                                           (255, 0, 0)])
         self._du_scale_labels = {0: "0 DU", .05: "1 DU", .1: "2 DU", .25: "5 DU", .6: "12 DU", 1: ">20 DU", }
+        self._du_scale_labels = self._du_scale_labels if self._data_type != 'VIIRS' else {0: "0", 0.5: "SO2 Index", 1: "100"}
 
         self._cloud_color_map = pg.ColorMap([0, 1], [(0, 0, 0), (255, 255, 255)])
         self._cloud_scale_labels = {0: "0%", 1: "100%", }
@@ -385,6 +384,281 @@ class DataFile:
         filter_ = xarray.DataArray(filter_, dims = ['time'])
         data = data_source.where(filter_, drop = True)
         return data
+
+    def _create_widgets(self, band, view_range, percentWidgets = () ):
+
+        (plot_item, scale_widget,
+         disp_widget, date_label) = _initalize_image_widgets(self._file_date,
+                                                             band,
+                                                             self._data_type)
+
+        if band != 'cloud':
+            _percentContainer = QWidget()
+            _percentContainer.setObjectName("Percent Container")
+            _percentContainer.setAutoFillBackground(False)
+            _percentContainer.setStyleSheet('background-color:transparent')
+            main_layout = QVBoxLayout(_percentContainer)
+            main_layout.setObjectName("Main Layout")
+            main_layout.setContentsMargins(0, 0, 0, 0)
+            title = QLabel(_percentContainer)
+            title.setText("Percentiles:")
+            title.setAlignment(Qt.AlignLeft)
+            title_font = title.font()
+            title_font.setPointSize(8)
+            title.setFont(title_font)
+            main_layout.addWidget(title)
+            percentLayout = QHBoxLayout()
+            percentLayout.setObjectName("Percent Bar Layout")
+            percentLayout.setContentsMargins(0, 0, 0, 0)
+            percentLayout.setSpacing(0)
+            main_layout.addLayout(percentLayout)
+
+            for widg in percentWidgets:
+                percentLayout.addWidget(widg)
+
+            _percentContainer.setGeometry(0, 0, 300, 18)
+            _percentContainer.setLayout(main_layout)
+        else:
+            _percentContainer = None
+
+        vbox = plot_item.getViewBox()
+        vbox.disableAutoRange()
+
+        x_range, y_range = view_range
+        vbox.setRange(xRange=x_range, yRange=y_range, padding=0)
+
+        return (plot_item, scale_widget, disp_widget, date_label, _percentContainer)
+
+
+    def _plot_altitude(self, dataset, band, sector):
+        print(f"Beginning generation for {band}")
+        good = True # Assume good plot
+        percent_widgets = []
+
+        try:
+            QApplication(sys.argv + ['-platform', 'offscreen'])  # So we can make widgets :)
+        except RuntimeError as err:
+            if "singleton" not in str(err):
+                raise
+
+        self._pixel_paths = [_generate_path(x) for x in self._scaled_coords]
+
+        if band != 'cloud':
+            color_map = self._du_color_map
+            scale_labels = self._du_scale_labels
+
+            _percentiles = numpy.nanpercentile(dataset, self._percentile_levels)
+            _percentiles[_percentiles < 0] = 0
+            _percentiles[_percentiles > 20] = 20
+
+            _percentColors = self._du_color_map.map(_percentiles * (1 / 20),
+                                                    mode = 'qcolor')
+
+            # Normalize the dataset to 0-20
+            dataset *= (1 / 20)
+            dataset[dataset > 1] = 1
+            dataset[dataset < 0] = 0
+
+            # When rounded to 5 digits, the color results are identical.
+            # Doing the rounding significanly reduces the number of unique values,
+            # therby enabling significant speed up by using a lookup table rather
+            # than having to check each value individually.
+            dataset = numpy.round(dataset, 5)
+
+            # Create some percent widgets
+            for idx, color in enumerate(_percentColors):
+                val = _percentiles[idx]
+                widg = QWidget()
+                lay = QVBoxLayout()
+                lay.setObjectName(f"Val {idx} layout")
+                lay.setContentsMargins(0, 0, 0, 0)
+                widg.setLayout(lay)
+                label = QLabel()
+                label.setText(f"{self._percentile_levels[idx]}<sup>th</sup><br>{str(round(val, 2))} DU")
+                labelFont = label.font()
+                labelFont.setPointSize(8)
+                label.setFont(labelFont)
+                label.setAlignment(Qt.AlignCenter)
+                lay.addWidget(label)
+                ss = f'background-color:{color.name()};border:1px solid black;'
+                if idx != 0:
+                    ss += "border-left:None;"
+
+                widg.setStyleSheet(ss)
+                percent_widgets.append(widg)
+
+        else:
+            color_map = self._cloud_color_map
+            scale_labels = self._cloud_scale_labels
+
+        (plot_item, scale_widget,
+         disp_widget, date_label, percentContainer) = self._create_widgets(
+             band,
+             sector['range'],
+             percent_widgets
+         )
+
+        # Add the total mass to the date label
+        if sector['sector'] == '1kmHIKI':
+            date_label.setText(date_label.text() + f" {sector['mass']:.2f}kt")
+            date_label.adjustSize()
+
+
+        # Only generate the brush once for each unique value
+        lookup_table = {x: pg.mkBrush(color_map.map(x)) for x in numpy.unique(dataset)}
+        brushes = [lookup_table[x] for x in dataset.data]
+
+        scale_widget.setGradient(color_map.getGradient())
+        scale_widget.setLabels(scale_labels)
+
+        # Generate Plot
+        plot = plot_item.plot(self._data_x, self._data_y,
+                              pen=None,
+                              symbolPen=None,
+                              symbolBrush=brushes,
+                              pxMode=False,
+                              symbolSize=self._scale_factors,
+                              symbol=self._pixel_paths)
+
+        plot_item.getViewWidget().parent().grab()
+        volcview_img = plot_item.getViewWidget().parent().grab()
+
+
+        self._view_extents = plot_item.getViewBox().viewRange()
+
+        file_bytes = QByteArray()
+        file_buffer = QBuffer(file_bytes)
+        file_buffer.open(QIODevice.WriteOnly)
+        volcview_img.save(file_buffer, "PNG")
+        file_buffer.close()
+
+        file_stream = BytesIO(file_bytes)
+        pil_img = Image.open(file_stream)
+
+        # find coverage percent(ish)
+        width, height = pil_img.size
+        total_count = width * height  # Should be 800,000, unless we changed the size of the images.
+
+        # dump into a numpy array to count grey pixels
+        as_array = numpy.array(pil_img)
+
+        # the grey value we use is 238, so if all elements of axis 2 are 238,
+        # then the pixel is grey.
+        is_grey = numpy.all(as_array == 238, axis=2)
+        # number that is False is non-grey, or covered, pixels
+        # Not quite true due to scale bar, borders, etc.
+        unique, counts = numpy.unique(is_grey, return_counts=True)
+        non_grey = dict(zip(unique, counts))[False]
+
+        covered_percent = non_grey / total_count
+
+        # Don't send the image to volcview unless it has at least 15% coverage.
+        # Allow 2% for the scale bar and other features.
+        threshold = .17
+        if sector['pixelSize'] == 5:
+            threshold = .06
+
+        if covered_percent > threshold:
+            self._add_coastlines(pil_img)
+
+            raw_data = QByteArray()
+            buffer = QBuffer(raw_data)
+
+            if band !='cloud' and not self._data_type in ('VIIRS'):
+                # "Save" the percentile bar to a bytes buffer, in PNG format
+                buffer.open(QIODevice.WriteOnly)
+                percentContainer.grab().save(buffer, "PNG")
+                buffer.close()
+
+                # Use a bytes IO object to "read" the image into a PIL object
+                img_stream = BytesIO(raw_data)
+                with Image.open(img_stream) as img:
+                    pil_img.paste(img,
+                                  (5, 5),
+                                  mask = img)
+
+            # Add the scale bar and timestamp.
+            scale_top = pil_img.height
+
+            buffer.open(QIODevice.WriteOnly)
+            scale_widget.grab()  # why? WHYYYYYYYY????
+            scale_widget.grab().save(buffer, "PNG")
+            buffer.close()
+
+            img_stream = BytesIO(raw_data)
+            with Image.open(img_stream) as img:
+                img = img.convert("RGBA")
+
+                # Make white pixels transparent
+                data = numpy.asarray(img.getdata(), dtype = 'uint8')
+                data[(data == (255, 255, 255, 255)).all(axis = 1)] = [255, 255, 255, 0]
+                img = Image.fromarray(data.reshape(*reversed(img.size), 4))
+
+                scale_top = pil_img.height - img.height - 10
+                pil_img.paste(img, (25, scale_top), mask = img)
+
+            # Add the timestamp
+            buffer.open(QIODevice.WriteOnly)
+            date_label.grab().save(buffer, "PNG")
+            buffer.close()
+
+            img_stream = BytesIO(raw_data)
+            with Image.open(img_stream) as img:
+                img = img.convert("RGBA")
+
+                # Make white pixels transparent
+                data = numpy.asarray(img.getdata(), dtype = 'uint8')
+                data[(data == (255, 255, 255, 255)).all(axis = 1)] = [255, 255, 255, 0]
+                img = Image.fromarray(data.reshape(*reversed(img.size), 4))
+
+                pil_img.paste(img,
+                              (pil_img.width - img.width - 51,
+                               scale_top - img.height - 5),
+                              mask = img)
+
+            # Save an archive image
+            logging.debug("Saving archive image for %s", band)
+            filename = f"{self._file_date.strftime('%Y_%m_%d_%H%M%S')}-{band}-{self._data_type}.png"
+            save_file = os.path.join(config.FILE_BASE, 'VolcView', sector['name'],
+                                     self._file_date.strftime('%Y'),
+                                     self._file_date.strftime('%m'),
+                                     filename)
+            os.makedirs(os.path.dirname(save_file), exist_ok = True)
+            pil_img.save(save_file, format = 'PNG')
+            file_stream = BytesIO()
+            # "Save" the image to memory in PNG format
+            pil_img.save(file_stream, format='PNG')
+            file_stream.seek(0)  # Go back to the begining for reading out
+            logging.debug("Uploading image for %s", band)
+            if not DEBUG:
+                self._volcview_upload(file_stream, sector, band)
+            else:
+                logging.debug("******Pretending to send to volc view")
+
+                print("TEST UPLOAD", sector['name'], filename, "***200***")
+
+            logging.debug("Image upload complete")
+
+            if DEBUG:
+                # This is just Debugging code to save the generated
+                # image to disk for local analysis.
+                # Feel free to change file paths to something more
+                # appropriate if desired.
+                print(f"^^^^SAVING IMAGE FOR FILE TO DISK^^^")
+                dest_dir = f"/tmp/VolcViewImages/{sector['sector']}"
+                os.makedirs(dest_dir, exist_ok=True)
+                dest_file = f"{self._data_type}-{band}-{self._file_date.strftime('%Y_%m_%d_%H%M%S')}.png"
+                dest_path = os.path.join(dest_dir, dest_file)
+                file_stream.seek(0)
+                with open(dest_path, 'wb') as f:
+                    f.write(file_stream.read())
+            ###################
+        else:
+            logging.info("Not enough coverage to bother with")
+            good = False
+
+        plot_item.removeItem(plot)
+        return good
 
     def _generate_sector(self, sector, band=None, gen_cloud=False):
         logging.debug("Generation process launched for %s", sector)
@@ -533,7 +807,7 @@ class DataFile:
         logging.debug("Data filtered for sector succesfully")
 
         # Center point of pixels
-        data_x, data_y = self._laea_transformer.transform(sector_data['latitude'],
+        self._data_x, self._data_y = self._laea_transformer.transform(sector_data['latitude'],
                                                           sector_data['longitude'])
         laea_pixel_bounds = numpy.stack([sector_data['x_laea'],
                                          sector_data['y_laea']],
@@ -544,299 +818,77 @@ class DataFile:
 
 
         # Do for each altitude
-        _percentile_levels = (90, 95, 97, 99, 100)
+
         # Generate path objects for each pixel for graphing purposes.
         # To get the shape of each pixel, shift each one to 0,0 lower left bounding box
         shifted_coords = laea_pixel_bounds - numpy.min(laea_pixel_bounds, axis=1)[:, None, :]
         # We have to do min twice to get the single min value for each group of corner points
         # If we only did it once, X and Y would be scaled seperately, distorting the shape.
-        scale_factors = numpy.max(numpy.max(shifted_coords, axis=1), axis=1)
+        self._scale_factors = numpy.max(numpy.max(shifted_coords, axis=1), axis=1)
         # Scale each pixel to fit within -0.5 - +0.5
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            scaled_coords = (shifted_coords * (1 / scale_factors[:, None, None])) - .5
+            self._scaled_coords = (shifted_coords * (1 / self._scale_factors[:, None, None])) - .5
         # "Center" the scaled coordinates so the paths correctly represent the points
-        scaled_coords -= (((numpy.max(scaled_coords, axis=1) -
-                            numpy.min(scaled_coords, axis=1)) - 1) / 2)[:, None, :]
+        self._scaled_coords -= (((numpy.max(self._scaled_coords, axis=1) -
+                            numpy.min(self._scaled_coords, axis=1)) - 1) / 2)[:, None, :]
 
-        pixel_paths = [_generate_path(x) for x in scaled_coords]
-
-        labels = self._du_scale_labels if self._data_type != 'VIIRS' else {0: "0", 0.5: "SO2 Index", 1: "100"}
 
         heights = self._heights
         if self._data_type != 'VIIRS':
             heights = heights + ['cloud']
 
+        t1 = time.time()
+        if len(heights) > 1:
+            pool = self._mpctx.Pool(processes = len(heights),
+                                    maxtasksperchild = 1,
+                                    initializer = init_logging)
+
         for idx, alt in enumerate(heights):
+            output_data_col = f"normalized_du_{alt}"
             if alt != 'cloud':
                 band = self._bands[idx]
                 # VIIRS is weird... :(
-                column = f'SO2_number_density_{alt}' if self._data_type != 'VIIRS' else 'SO2_column_number_density'
-                normalized_du_col = f"normalized_du_{alt}"
+                raw_column = f'SO2_number_density_{alt}' if self._data_type != 'VIIRS' else 'SO2_column_number_density'
+                sector_data[output_data_col] = sector_data[raw_column] * 2241.15  # Conversion Factor from manual
 
-                mass = areas * sector_data[column]  # in moles
-                mass *= 64  # in grams
-                total_mass = numpy.nansum(mass) * 1e-9  # Kilo Tonnes
-
-                du_val = sector_data[column] * 2241.15  # Conversion Factor from manual
-                sector_data[normalized_du_col] = du_val * (1 / 20)
-                sector_data[normalized_du_col][sector_data[normalized_du_col] > 1] = 1
-                sector_data[normalized_du_col][sector_data[normalized_du_col] < 0] = 0
-
-                _percentiles = numpy.nanpercentile(du_val, _percentile_levels)
-                _percentiles[_percentiles < 0] = 0
-                _percentiles[_percentiles > 20] = 20
-
-                _percentColors = self._du_color_map.map(_percentiles * (1 / 20),
-                                                        mode = 'qcolor')
-
-                # When rounded to 5 digits, the color results are identical.
-                # Doing the rounding significanly reduces the number of unique values,
-                # therby enabling significant speed up by using a lookup table rather
-                # than having to check each value individually.
-                sector_data[normalized_du_col] = numpy.round(sector_data[normalized_du_col], 5)
             else:
-                column = 'cloud_fraction'
+                raw_column = 'SO2_column_number_density'
+                output_data_col = 'cloud_fraction'
                 band = 'cloud'
 
-                mass = areas * sector_data['SO2_column_number_density']  # in moles
-                mass *= 64  # in grams
-                total_mass = numpy.nansum(mass) * 1e-9  # Kilo Tonnes
+            mass = areas * sector_data[raw_column]  # in moles
+            mass *= 64  # in grams
+            total_mass = numpy.nansum(mass) * 1e-9  # Kilo Tonnes
 
             # show_volc_names = sector.get('showAllLabels', True)
             # hide_all_names = sector.get('hideAllLabels', False)
 
-            (plot_item, scale_widget,
-             disp_widget, date_label) = _initalize_image_widgets(self._file_date,
-                                                                 band,
-                                                                 self._data_type)
 
-            # Add the total mass to the date label
-            if sector['sector'] == '1kmHIKI':
-                date_label.setText(date_label.text() + f" {total_mass:.2f}kt")
-                date_label.adjustSize()
+            logging.info(f"Plotting {alt} dataset")
+            sector['range'] = (x_range, y_range)
+            sector['mass'] = total_mass
 
-            # Make color blocks to display the percentiles
-            if alt != 'cloud':
-                _percentContainer = QWidget()
-                _percentContainer.setObjectName("Percent Container")
-                _percentContainer.setAutoFillBackground(False)
-                _percentContainer.setStyleSheet('background-color:transparent')
-                main_layout = QVBoxLayout(_percentContainer)
-                main_layout.setObjectName("Main Layout")
-                main_layout.setContentsMargins(0, 0, 0, 0)
-                title = QLabel(_percentContainer)
-                title.setText("Percentiles:")
-                title.setAlignment(Qt.AlignLeft)
-                title_font = title.font()
-                title_font.setPointSize(8)
-                title.setFont(title_font)
-                main_layout.addWidget(title)
-                percentLayout = QHBoxLayout()
-                percentLayout.setObjectName("Percent Bar Layout")
-                percentLayout.setContentsMargins(0, 0, 0, 0)
-                percentLayout.setSpacing(0)
-                main_layout.addLayout(percentLayout)
-
-                for idx, color in enumerate(_percentColors):
-                    val = _percentiles[idx]
-                    widg = QWidget()
-                    lay = QVBoxLayout()
-                    lay.setObjectName(f"Val {idx} layout")
-                    lay.setContentsMargins(0, 0, 0, 0)
-                    widg.setLayout(lay)
-                    label = QLabel()
-                    label.setText(f"{_percentile_levels[idx]}<sup>th</sup><br>{str(round(val, 2))} DU")
-                    labelFont = label.font()
-                    labelFont.setPointSize(8)
-                    label.setFont(labelFont)
-                    label.setAlignment(Qt.AlignCenter)
-                    lay.addWidget(label)
-                    ss = f'background-color:{color.name()};border:1px solid black;'
-                    if idx != 0:
-                        ss += "border-left:None;"
-
-                    widg.setStyleSheet(ss)
-                    percentLayout.addWidget(widg)
-
-                _percentContainer.setGeometry(0, 0, 300, 18)
-                _percentContainer.setLayout(main_layout)
-
-            vbox = plot_item.getViewBox()
-            vbox.disableAutoRange()
-
-            vbox.setRange(xRange=x_range, yRange=y_range, padding=0)
-
-            ###############################################################
-            # Plot Generation Code
-            ###############################################################
-            def plot_dataset(dataset, color_map, scale_labels):
-                good = True # Assume good plot
-                # Only generate the brush once for each unique value
-                lookup_table = {x: pg.mkBrush(color_map.map(x)) for x in numpy.unique(dataset)}
-                brushes = [lookup_table[x] for x in dataset.data]
-
-                scale_widget.setGradient(color_map.getGradient())
-                scale_widget.setLabels(scale_labels)
-
-                # Generate Plot
-                plot = plot_item.plot(data_x, data_y,
-                                      pen=None,
-                                      symbolPen=None,
-                                      symbolBrush=brushes,
-                                      pxMode=False,
-                                      symbolSize=scale_factors,
-                                      symbol=pixel_paths)
-
-                plot_item.getViewWidget().parent().grab()
-                volcview_img = plot_item.getViewWidget().parent().grab()
-                self._view_extents = vbox.viewRange()
-
-                file_bytes = QByteArray()
-                file_buffer = QBuffer(file_bytes)
-                file_buffer.open(QIODevice.WriteOnly)
-                volcview_img.save(file_buffer, "PNG")
-                file_buffer.close()
-
-                file_stream = BytesIO(file_bytes)
-                pil_img = Image.open(file_stream)
-
-                # find coverage percent(ish)
-                width, height = pil_img.size
-                total_count = width * height  # Should be 800,000, unless we changed the size of the images.
-
-                # dump into a numpy array to count grey pixels
-                as_array = numpy.array(pil_img)
-
-                # the grey value we use is 238, so if all elements of axis 2 are 238,
-                # then the pixel is grey.
-                is_grey = numpy.all(as_array == 238, axis=2)
-                # number that is False is non-grey, or covered, pixels
-                # Not quite true due to scale bar, borders, etc.
-                unique, counts = numpy.unique(is_grey, return_counts=True)
-                non_grey = dict(zip(unique, counts))[False]
-
-                covered_percent = non_grey / total_count
-
-                # Don't send the image to volcview unless it has at least 15% coverage.
-                # Allow 2% for the scale bar and other features.
-                threshold = .17
-                if sector['pixelSize'] == 5:
-                    threshold = .06
-
-                if covered_percent > threshold:
-                    self._add_coastlines(pil_img)
-
-                    raw_data = QByteArray()
-                    buffer = QBuffer(raw_data)
-
-                    if not gen_cloud and not self._data_type in ('VIIRS'):
-                        # "Save" the percentile bar to a bytes buffer, in PNG format
-                        buffer.open(QIODevice.WriteOnly)
-                        _percentContainer.grab().save(buffer, "PNG")
-                        buffer.close()
-
-                        # Use a bytes IO object to "read" the image into a PIL object
-                        img_stream = BytesIO(raw_data)
-                        with Image.open(img_stream) as img:
-                            pil_img.paste(img,
-                                          (5, 5),
-                                          mask = img)
-
-                    # Add the scale bar and timestamp.
-                    scale_top = pil_img.height
-
-                    buffer.open(QIODevice.WriteOnly)
-                    scale_widget.grab()  # why? WHYYYYYYYY????
-                    scale_widget.grab().save(buffer, "PNG")
-                    buffer.close()
-
-                    img_stream = BytesIO(raw_data)
-                    with Image.open(img_stream) as img:
-                        img = img.convert("RGBA")
-
-                        # Make white pixels transparent
-                        data = numpy.asarray(img.getdata(), dtype = 'uint8')
-                        data[(data == (255, 255, 255, 255)).all(axis = 1)] = [255, 255, 255, 0]
-                        img = Image.fromarray(data.reshape(*reversed(img.size), 4))
-
-                        scale_top = pil_img.height - img.height - 10
-                        pil_img.paste(img, (25, scale_top), mask = img)
-
-                    # Add the timestamp
-                    buffer.open(QIODevice.WriteOnly)
-                    date_label.grab().save(buffer, "PNG")
-                    buffer.close()
-
-                    img_stream = BytesIO(raw_data)
-                    with Image.open(img_stream) as img:
-                        img = img.convert("RGBA")
-
-                        # Make white pixels transparent
-                        data = numpy.asarray(img.getdata(), dtype = 'uint8')
-                        data[(data == (255, 255, 255, 255)).all(axis = 1)] = [255, 255, 255, 0]
-                        img = Image.fromarray(data.reshape(*reversed(img.size), 4))
-
-                        pil_img.paste(img,
-                                      (pil_img.width - img.width - 51,
-                                       scale_top - img.height - 5),
-                                      mask = img)
-
-                    # Save an archive image
-                    logging.debug("Saving archive image for %s", band)
-                    filename = f"{self._file_date.strftime('%Y_%m_%d_%H%M%S')}-{band}-{self._data_type}.png"
-                    save_file = os.path.join(config.FILE_BASE, 'VolcView', sector['name'],
-                                             self._file_date.strftime('%Y'),
-                                             self._file_date.strftime('%m'),
-                                             filename)
-                    os.makedirs(os.path.dirname(save_file), exist_ok = True)
-                    pil_img.save(save_file, format = 'PNG')
-                    file_stream = BytesIO()
-                    # "Save" the image to memory in PNG format
-                    pil_img.save(file_stream, format='PNG')
-                    file_stream.seek(0)  # Go back to the begining for reading out
-                    logging.debug("Uploading image for %s", band)
-                    if not DEBUG:
-                        self._volcview_upload(file_stream, sector, band)
-                    else:
-                        logging.debug("******Pretending to send to volc view")
-
-                        print("TEST UPLOAD", sector['name'], filename, "***200***")
-
-                    logging.debug("Image upload complete")
-
-                    if DEBUG:
-                        # This is just Debugging code to save the generated
-                        # image to disk for local analysis.
-                        # Feel free to change file paths to something more
-                        # appropriate if desired.
-                        print(f"^^^^SAVING IMAGE FOR FILE TO DISK^^^")
-                        dest_dir = f"/tmp/VolcViewImages/{sector['sector']}"
-                        os.makedirs(dest_dir, exist_ok=True)
-                        dest_file = f"{self._data_type}-{band}-{self._file_date.strftime('%Y_%m_%d_%H%M%S')}.png"
-                        dest_path = os.path.join(dest_dir, dest_file)
-                        file_stream.seek(0)
-                        with open(dest_path, 'wb') as f:
-                            f.write(file_stream.read())
-                    ###################
-                else:
-                    logging.info("Not enough coverage to bother with")
-                    good = False
-
-                plot_item.removeItem(plot)
-                return good
-            ###############################################################
-
-            if alt == 'cloud':
-                logging.info("Plotting CLOUD dataset")
-                plot_dataset(sector_data['cloud_fraction'], self._cloud_color_map,
-                             self._cloud_scale_labels)
-                logging.debug("CLOUD dataset plotted. function ends.")
+            if len(heights) > 1:
+                pool.apply_async(
+                    self._plot_altitude,
+                    args = (
+                        sector_data[output_data_col],
+                        band,
+                        sector
+                    ),
+                    error_callback = error_callback
+                )
             else:
-                logging.info(f"Plotting {alt} dataset")
-                good_plot = plot_dataset(sector_data[normalized_du_col], self._du_color_map, labels)
-                if not good_plot:
-                    break # No sense in trying the other altitudes, the coverage is the same
+                self._plot_altitude(sector_data[output_data_col], band, sector)
+            #good_plot = self._plot_altitude(sector_data[output_data_col], band, sector)
+            #if not good_plot:
+            #    break # No sense in trying the other altitudes, the coverage is the same
+
+        if len(heights) > 1:
+            pool.close()
+            pool.join() # Wait for everything to complete
+        print(f"Loop complete in: {time.time() - t1}")
 
     def _add_coastlines(self, img):
         x_range, y_range = self._view_extents
