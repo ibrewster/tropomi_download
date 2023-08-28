@@ -51,7 +51,7 @@ from GradientScale import GradientWidget
 from h5pyimport import import_product, flatten_data
 from util import init_logging
 
-DEBUG = True
+DEBUG = False
 
 class DBCursor():
     _conn = None

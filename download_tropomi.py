@@ -209,11 +209,14 @@ def download_sentinelhub(filename, uuid):
         file.write(chunk)
 
     # Decompress the file
-    with zipfile.ZipFile(file) as f:
-        datafile = next((x for x in f.namelist() if x.endswith('.nc')))
-        logging.info(f"Extracting {datafile} from archive")
-        with f.open(datafile) as df, open(filename + ".download", 'wb') as sf:
-            sf.write(df.read())
+    try:
+        with zipfile.ZipFile(file) as f:
+            datafile = next((x for x in f.namelist() if x.endswith('.nc')))
+            logging.info(f"Extracting {datafile} from archive")
+            with f.open(datafile) as df, open(filename + ".download", 'wb') as sf:
+                sf.write(df.read())
+    except zipfile.BadZipFile as e:
+        logging.error(f"Unable to decompress file {filename}. Will try again later. ({e})")
 
 
 def download_file(file_name, uuid):
