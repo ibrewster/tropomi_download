@@ -1,4 +1,4 @@
-#!/tropomi_download/bin/python
+#!/shared/apps/so2_processing/env/bin/python
 import logging
 import os
 import sys
@@ -44,14 +44,14 @@ if __name__ == "__main__":
             logging.debug("Detected VIIRS file")
             date_part = file_name[1:14]
             date_format = '%Y%j%H%M%S'
-            DEST_PATH = '/data/viirs_so2'
+            DEST_PATH = '/shared/data/viirs_so2'
         else:
             # OMPS
             logging.debug("Detected OMPS file")
             file_parts = file_name.split('_')
             date_part = file_parts[3]
             date_format = '%Ym%m%dt%H%M%S'
-            DEST_PATH = '/omps_data'
+            DEST_PATH = '/shared/data/omps_data'
 
         file_time = datetime.strptime(date_part, date_format)
         file_time = file_time.replace(tzinfo=timezone.utc)
