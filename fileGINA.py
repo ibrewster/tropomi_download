@@ -1,4 +1,4 @@
-#!/tropomi_download/bin/python
+#!/shared/apps/so2_processing/env/bin/python
 import logging
 import os
 import sys
