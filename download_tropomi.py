@@ -150,7 +150,7 @@ def download_part(url, start, end, output):
             if range_size <= 0:
                 break #Segment complete
 
-            logging.info(f"Requested range {range_start} - {end}. Size: {end-range_start}")
+            logging.debug(f"Requested range {range_start} - {end}. Size: {end-range_start}")
             resume_header = {'Range': f'bytes={range_start}-{end}', }
             download_request = requests.get(url, stream=True,
                                             headers=resume_header, auth=auth, timeout = 30)
