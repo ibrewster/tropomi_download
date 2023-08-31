@@ -115,11 +115,14 @@ def auth_sentinelhub():
             token = json.load(f)
 
         expires = datetime.utcfromtimestamp(token['expires_at'])
-        if expires < datetime.utcnow():
-            token = None #token has expired. Get rid of it.
+        valid_time = round((expires - datetime.utcnow()).total_seconds() / 60, 2)
+        logging.info(f"Loaded token will expire in {valid_time} minutes")
+        if valid_time < 2:
+            token = None #token has expired, or will soon. Get rid of it.
 
     client = BackendApplicationClient(client_id = oauth_id)
     if token is None:
+        logging.info("Fetching new sentinel hub access token")
         session = OAuth2Session(client = client)
 
         # Get token for the session
@@ -417,7 +420,7 @@ def download(use_preop: bool = True):
     DATE_FROM = from_date.strftime("%Y-%m-%d")
 
     ######DEBUG - REMOVE#######
-    #DATE_FROM = "2023-08-07"
+    DATE_FROM = "2023-08-30"
 #    DATE_TO = "2023-07-20T11:00:00Z"
     ###########################
 

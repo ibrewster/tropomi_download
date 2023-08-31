@@ -1,7 +1,6 @@
 import config
 
 import argparse
-import gc
 import logging
 import json
 import math
@@ -30,17 +29,17 @@ import xarray
 from PIL import Image
 from pycoast import ContourWriterAGG
 
-from PySide2.QtGui import (QPainterPath,
+from PySide6.QtGui import (QPainterPath,
                            QFont)
 
-from PySide2.QtWidgets import (QApplication,
+from PySide6.QtWidgets import (QApplication,
                                QWidget,
                                QVBoxLayout,
                                QHBoxLayout,
                                QLabel)
 
 
-from PySide2.QtCore import (QSize,
+from PySide6.QtCore import (QSize,
                             QByteArray,
                             QBuffer,
                             QIODevice,
@@ -945,25 +944,28 @@ class DataFile:
         # in the config.
         if all(return_codes) and config.DB_HOST:
             # Save this sector to the DB
-            logging.info(f"Saving last upload time for sector {sector['name']}")
             sector_time = self._file_date
             sector_name = sector['name']
+            logging.info(f"Saving last upload time of {sector_time} for sector {sector_name}")            
             CHECK_SQL = f"SELECT last_update FROM {config.DB_TABLE} WHERE sector=%s"
 
-            SQL = f"""
-            INSERT INTO {config.DB_TABLE} (sector,last_update)
-            VALUES (%s,%s)
-            ON CONFLICT (sector) DO UPDATE
-            set last_update=EXCLUDED.last_update
-            """
-            with DBCursor() as cursor:
-                cursor.execute(CHECK_SQL, (sector_name, ))
-                recorded_time = cursor.fetchone()
-                if recorded_time:
-                    recorded_time = recorded_time[0]
-                    if recorded_time < sector_time:
-                        cursor.execute(SQL, (sector_name, sector_time))
-                        cursor.connection.commit()
+            if DEBUG:
+                logging.info("Not saving to database as we are in debug mode")
+            else:
+                SQL = f"""
+                INSERT INTO {config.DB_TABLE} (sector,last_update)
+                VALUES (%s,%s)
+                ON CONFLICT (sector) DO UPDATE
+                set last_update=EXCLUDED.last_update
+                """
+                with DBCursor() as cursor:
+                    cursor.execute(CHECK_SQL, (sector_name, ))
+                    recorded_time = cursor.fetchone()
+                    if recorded_time:
+                        recorded_time = recorded_time[0]
+                        if recorded_time < sector_time:
+                            cursor.execute(SQL, (sector_name, sector_time))
+                            cursor.connection.commit()
 
 
 def main(data_file, use_spawn=True):
