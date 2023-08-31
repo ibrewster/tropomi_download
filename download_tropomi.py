@@ -242,11 +242,12 @@ def download_file(file_name, uuid):
 
     download_request.close()
 
-    chunk_size = math.ceil(total_size / 4)
+    workers = 3
+    chunk_size = math.ceil(total_size / workers)
     start_byte = 0
     end_byte = 0
     chunk_num = -1
-    with ThreadPoolExecutor(max_workers = 4) as executor:
+    with ThreadPoolExecutor(max_workers = workers) as executor:
         while end_byte < total_size:
             chunk_num += 1
             end_byte = start_byte + chunk_size
