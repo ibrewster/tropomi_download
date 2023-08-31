@@ -420,7 +420,7 @@ def download(use_preop: bool = True):
     DATE_FROM = from_date.strftime("%Y-%m-%d")
 
     ######DEBUG - REMOVE#######
-    DATE_FROM = "2023-08-30"
+ #   DATE_FROM = "2023-08-30"
 #    DATE_TO = "2023-07-20T11:00:00Z"
     ###########################
 
