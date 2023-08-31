@@ -964,8 +964,11 @@ class DataFile:
                     if recorded_time:
                         recorded_time = recorded_time[0]
                         if recorded_time < sector_time:
+                            logging.info(f"Recorded time of {recorded_time} is before our time. Updating")
                             cursor.execute(SQL, (sector_name, sector_time))
                             cursor.connection.commit()
+                        else:
+                            logging.info(f"Not updating upload time as {recorded_time}>{sector_time}")
 
 
 def main(data_file, use_spawn=True):
