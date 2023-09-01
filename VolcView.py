@@ -341,7 +341,7 @@ class DataFile:
             if not self._data or not self._data['latitude'].any():
                 raise TypeError("Missing Data")
         except TypeError:
-            logging.warning(f"No data found for {self._file_name}, {height}")
+            logging.warning(f"No data found for {self._file_name}")
             return
 
         for sector in self._sectors:
