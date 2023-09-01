@@ -303,12 +303,14 @@ processinglevel:L2 AND processingmode:{PROCESS_FILTER}))',
     URL = f"{SEARCH_URL}?{PARAM_STRING}"
     headers = {'Accept': 'application/json, text/plain, */*'}
 
+    logging.debug("Sending request")
     results = requests.get(URL, auth=auth, headers = headers)
     if results.status_code != 200:
         logging.error(f"An error occured while searching: %i\n%s",
                       results.status_code, results.text)
         return None, results.status_code
 
+    logging.debug("Request received. Parsing JSON")
     results_object = results.json()
     return results_object['products'], 200
 
@@ -405,7 +407,7 @@ def download(use_preop: bool = True):
     # this produces logging output, so don't import it until *after* we set up logging.
     from h5pyimport import import_product
 
-    logging.info("Begining download on %s", date.today())
+    logging.info("Begining download process on %s", date.today())
 
     DEST_DIR = "Offline" if config.OFFLINE else "NRTI"
 
@@ -425,14 +427,20 @@ def download(use_preop: bool = True):
 #    DATE_TO = "2023-07-20T11:00:00Z"
     ###########################
 
-    if use_preop:
-        results_object, code = get_file_list(DATE_FROM, DATE_TO)
-        download_func = download_file
-    else:
-        results_object, code = get_file_list_sentinel_hub(DATE_FROM, DATE_TO)
-        download_func = download_sentinelhub
+    logging.info(f"Searching for files from {DATE_FROM} to {DATE_TO}")
+    try:        
+        if use_preop:
+            results_object, code = get_file_list(DATE_FROM, DATE_TO)
+            download_func = download_file
+        else:
+            results_object, code = get_file_list_sentinel_hub(DATE_FROM, DATE_TO)
+            download_func = download_sentinelhub
+    except Exception as e:
+        logging.exception(f"Unable to perform search for files: {e}")
+        exit(code)
 
     if results_object is None:
+        logging.error(f"Search failed with error code: {code}. Giving up for now.")
         exit(code)
 
     file_count = len(results_object)
