@@ -30,7 +30,7 @@ from util import init_logging
 if len(sys.argv) < 2 or not sys.argv[1] == "--no-volcview":
     from VolcView import main as sendVolcView
 
-SHOW_PROGRESS = True
+SHOW_PROGRESS = False
 
 auth = HTTPBasicAuth('s5pguest', 's5pguest')
 
@@ -514,7 +514,7 @@ def download(use_preop: bool = True):
     volcanos = numpy.asarray(config.VOLCANOS)
     volc_points = [geometry.Point(x['longitude'], x['latitude']) for x in volcanos]
 
-    # setup import params
+    UPDATE_FILE = os.path.join(config.FILE_BASE, 'LAST_UPDATE_MARKER.txt')
     for idx, product in enumerate(results_object):
         if use_preop:
             uuid = product['uuid']
@@ -581,6 +581,7 @@ def download(use_preop: bool = True):
             os.unlink(file_name + ".download")
             # "touch" a placeholder file so we don't try to download this file again
             open(file_name + ".skipped", 'a').close()
+            open(UPDATE_FILE, 'w').close()
         except Exception as e:
             logging.exception("Failed to load file %s. Will try again later.", file_name)
             os.unlink(file_name + ".download")
@@ -589,6 +590,7 @@ def download(use_preop: bool = True):
         else:
             # Good file, rename it properly
             os.rename(f"{file_name}.download", f"{file_name}.nc")
+            open(UPDATE_FILE, 'w').close()
             for volc_name in covered_volcs:
                 dest_dir = os.path.join(volc_dir, volc_name)
                 os.makedirs(dest_dir, exist_ok=True)
