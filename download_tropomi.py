@@ -396,9 +396,13 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
     odata_url = 'https://catalogue.dataspace.copernicus.eu/odata/v1/Products/OData.CSC.FilterList'
 
     num_files = len(names)
-    end_idx = num_files - 1
-    batch_size = math.ceil(num_files / 19)
-    logging.info(f"Batch size: {batch_size}")
+    end_idx = num_files
+    if num_files > 100:
+        batch_size = math.ceil(num_files / 19)
+    else:
+        batch_size = num_files
+        
+    logging.info(f"Using a batch size of: {batch_size}")
     features = []
     start_idx = 0
     stop_idx = start_idx + batch_size
@@ -408,7 +412,7 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
 
     while start_idx < end_idx:
         batch = names[start_idx:stop_idx]
-        logging.info(f"Fetching batch {idx + 1} of 19")
+        logging.info(f"Fetching batch {idx} of 19")
         odata_request = {
             "FilterProducts": batch,
         }
@@ -418,7 +422,7 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
         features += results_object['value'] #Object ID's to download
         
         # Increment indexes for next batch
-        start_idx = stop_idx,
+        start_idx = stop_idx
         stop_idx = start_idx + batch_size
         if stop_idx > end_idx:
             stop_idx = end_idx
@@ -450,7 +454,7 @@ def download(use_preop: bool = True):
     DATE_FROM = from_date.strftime("%Y-%m-%d")
 
     ######DEBUG - REMOVE#######
- #   DATE_FROM = "2023-08-30"
+    DATE_FROM = "2023-08-30"
 #    DATE_TO = "2023-07-20T11:00:00Z"
     ###########################
 
@@ -464,7 +468,7 @@ def download(use_preop: bool = True):
             download_func = download_sentinelhub
     except Exception as e:
         logging.exception(f"Unable to perform search for files: {e}")
-        exit(code)
+        exit(-5)
 
     if results_object is None:
         logging.error(f"Search failed with error code: {code}. Giving up for now.")
