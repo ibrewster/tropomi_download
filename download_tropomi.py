@@ -447,13 +447,13 @@ def download(use_preop: bool = True):
 
     cache_location = os.path.join(os.path.dirname(__file__), 'downloadCache')
     with shelve.open(cache_location) as cache:
-        from_date = cache.get('lastRun', date.today() - timedelta(days=14))
+        from_date = cache.get('lastRun', date.today() - timedelta(days=7))
 
     to_date = date.today() + timedelta(days=1)
     DATE_TO = to_date.strftime("%Y-%m-%d")
 
-    # Look back 2 weeks (from the last run) to make sure we have everything
-    from_date = from_date - timedelta(days=14)
+    # Look back 1 week (from the last run) to make sure we have everything
+    from_date = from_date - timedelta(days=7)
     DATE_FROM = from_date.strftime("%Y-%m-%d")
 
     ######DEBUG - REMOVE#######
