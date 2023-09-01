@@ -514,7 +514,7 @@ def download(use_preop: bool = True):
     volcanos = numpy.asarray(config.VOLCANOS)
     volc_points = [geometry.Point(x['longitude'], x['latitude']) for x in volcanos]
 
-    UPDATE_FILE = os.path.join(config.FILE_BASE, 'LAST_UPDATE_MARKER.txt')
+    UPDATE_FILE = os.path.join(config.FILE_BASE, DEST_DIR, 'LAST_UPDATE_MARKER.txt')
     for idx, product in enumerate(results_object):
         if use_preop:
             uuid = product['uuid']
