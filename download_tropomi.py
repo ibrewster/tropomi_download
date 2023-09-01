@@ -7,6 +7,8 @@ import zipfile
 
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
+
+import oauthlib
 from oauthlib.oauth2 import BackendApplicationClient
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
 from requests_oauthlib import OAuth2Session
@@ -364,7 +366,12 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
     done = False
     features = []
     while not done:
-        results = session.post(SEARCH_URL, json = search_params)
+        try:
+            results = session.post(SEARCH_URL, json = search_params)
+        except oauthlib.oauth2.rfc6749.errors.TokenExpiredError:
+            logging.error("Token expired during result fetch. Renewing.")
+            session = auth_sentinelhub()
+            results = session.post(SEARCH_URL, json = search_params)
 
         if results.status_code != 200:
             logging.error(f"An error occured while searching: %i\n%s",
@@ -377,6 +384,7 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
         if next_val < 0:
             done = True
         else:
+            logging.info(f"Search contains more results. Fetching from {next_val}")
             search_params['next'] = next_val
 
         features += results_object['features']
