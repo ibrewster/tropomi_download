@@ -399,8 +399,9 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
     ####### This is step two. The above gives us the file names, but we then have to get the
     ####### Actual ID's we can use to download the files
     #######################################################################################
+    id_cache_file = os.path.join(os.path.dirname(__file__), 'id_cache.pickle')
     try:
-        with open('id_cache.pickle', 'rb') as cache_file:
+        with open(id_cache_file, 'rb') as cache_file:
             id_cache = pickle.load(cache_file)
     except FileNotFoundError:
         id_cache = {}
@@ -457,7 +458,7 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
 
     # Even if we didn't do any searching, id_cache may have changed due to older files timing out, 
     # so save it.
-    with open('id_cache.pickle', 'wb') as cache_file:
+    with open(id_cache_file, 'wb') as cache_file:
         pickle.dump(id_cache, cache_file)
         
     features = list(id_cache.values())
