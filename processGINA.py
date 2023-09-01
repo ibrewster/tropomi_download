@@ -23,10 +23,6 @@ logging.basicConfig(filename=ginaConfig.LOG_FILE,
 
 SRC_PATH = '/gina_root/upload'
 
-###DEBUG######
-SRC_PATH = '/Users/israel/Desktop/2023-04-07/'
-####DEBUG#####
-
 def future_complete(filename, future):
     try:
         result = future.result()
