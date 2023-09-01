@@ -1,0 +1,6 @@
+MQTT_SERVER = 'watchman'
+MQTT_TOPIC = 'GINA'
+LOG_FILE = '/var/log/gina.log'
+OMPS_DEST_DIR = '/shared/data/omps_data'
+VIIRS_DEST_DIR = '/tmp/VIIRS'
+#VIIRS_DEST_DIR = '/shared/data/viirs_so2'
