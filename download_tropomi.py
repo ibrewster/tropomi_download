@@ -363,6 +363,7 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
     }
 
     session = auth_sentinelhub()
+    logging.info("Getting search results")
     done = False
     features = []
     while not done:
