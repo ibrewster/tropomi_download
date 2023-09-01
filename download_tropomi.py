@@ -397,12 +397,15 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
 
     num_files = len(names)
     end_idx = num_files
-    if num_files > 100:
-        batch_size = math.ceil(num_files / 19)
+    
+    if num_files > 19:
+        num_batches = math.ceil(num_files / 19)
+        batch_size = math.ceil(num_files / num_batches)
     else:
+        num_batches = 1
         batch_size = num_files
         
-    logging.info(f"Using a batch size of: {batch_size}")
+    logging.info(f"Using {num_batches} batches of size: {batch_size}")
     features = []
     start_idx = 0
     stop_idx = start_idx + batch_size
@@ -412,7 +415,7 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
 
     while start_idx < end_idx:
         batch = names[start_idx:stop_idx]
-        logging.info(f"Fetching batch {idx} of 19")
+        logging.info(f"Fetching batch {idx} of {num_batches}")
         odata_request = {
             "FilterProducts": batch,
         }
