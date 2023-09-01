@@ -395,17 +395,34 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
     # We could query this API directly, but using the catalog API first allows us to use a MultiPolygon
     odata_url = 'https://catalogue.dataspace.copernicus.eu/odata/v1/Products/OData.CSC.FilterList'
 
-    batches = math.ceil(len(names) / 19)
+    num_files = len(names)
+    end_idx = num_files - 1
+    batch_size = math.ceil(num_files / 19)
+    logging.info(f"Batch size: {batch_size}")
     features = []
-    for idx, batch in enumerate(numpy.array_split(names, batches)):
+    start_idx = 0
+    stop_idx = start_idx + batch_size
+    if stop_idx > end_idx:
+        stop_idx = end_idx
+    idx = 1 # Loop counter
+
+    while start_idx < end_idx:
+        batch = names[start_idx:stop_idx]
         logging.info(f"Fetching batch {idx + 1} of 19")
         odata_request = {
-            "FilterProducts": batch.tolist(),
+            "FilterProducts": batch,
         }
 
         results = requests.post(odata_url, json = odata_request)
         results_object = results.json()
         features += results_object['value'] #Object ID's to download
+        
+        # Increment indexes for next batch
+        start_idx = stop_idx,
+        stop_idx = start_idx + batch_size
+        if stop_idx > end_idx:
+            stop_idx = end_idx
+        idx += 1
 
     features.sort(key = lambda x: x['OriginDate'], reverse = True)
     return features, 200
