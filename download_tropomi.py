@@ -545,7 +545,11 @@ def download(use_preop: bool = True):
 
         logging.info("Downloading %s (%d/%d)", file_name, idx + 1, file_count)
 
-        download_func(file_name, uuid)
+        try:
+            download_func(file_name, uuid)
+        except Exception as e:
+            logging.exception(f"Unable to download file: {e}")
+            continue
 
         # Try to import the file to see if we have any valid data
         logging.info("Checking file for good data")
