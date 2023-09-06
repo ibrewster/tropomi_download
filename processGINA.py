@@ -7,7 +7,7 @@ import logging
 import os
 import shutil
 
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, process
 from datetime import datetime, timezone
 from functools import partial
 
@@ -40,6 +40,8 @@ def on_message(client, userdata, message):
     message is an instance of MQTTMessage, a class with members topic, payload, qos and retain
     the payload should be the filename to be processed
     """
+    global executor
+    
     try:
         file = message.payload.decode()
         logging.info("Received message to process %s", file)
@@ -87,7 +89,13 @@ def on_message(client, userdata, message):
     
         # Fire and forget
         complete_callback = partial(future_complete, file_name)
-        future = executor.submit(genVolcView, dest_file, False)
+        try:
+            future = executor.submit(genVolcView, dest_file, False)
+        except process.BrokenProcessPool:
+            logging.exception("Process pool broken. Creating a new one and trying again.")
+            executor = ProcessPoolExecutor(4, max_tasks_per_child = 1)
+            future = executor.submit(genVolcView, dest_file, False)
+            
         future.add_done_callback(complete_callback)
         # genVolcView(dest_file, False)
     except Exception:
