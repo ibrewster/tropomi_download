@@ -95,7 +95,7 @@ def on_message(client, userdata, message):
 
 
 if __name__ == "__main__":
-    executor = ProcessPoolExecutor(4)
+    executor = ProcessPoolExecutor(4, max_tasks_per_child = 1)
     
     client = mqtt.Client()
     client.connect(ginaConfig.MQTT_SERVER)
