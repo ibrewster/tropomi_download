@@ -15,3 +15,4 @@ dask[array]
 zarr
 h5py
 paho-mqtt
+pystac-client
