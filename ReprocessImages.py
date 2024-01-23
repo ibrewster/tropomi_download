@@ -649,7 +649,7 @@ class DataFile:
                 # Feel free to change file paths to something more
                 # appropriate if desired.
                 print(f"^^^^SAVING IMAGE FOR FILE TO DISK^^^")
-                dest_dir = f"/tmp/VolcViewImages/{sector['sector']}"
+                dest_dir = f"/shared/data/tropomi_data/VolcView/COBRA/{sector['sector']}"
                 os.makedirs(dest_dir, exist_ok=True)
                 dest_file = f"{self._data_type}-{band}-{self._file_date.strftime('%Y_%m_%d_%H%M%S')}.png"
                 dest_path = os.path.join(dest_dir, dest_file)
