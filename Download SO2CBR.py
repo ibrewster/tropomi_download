@@ -5,6 +5,7 @@ from pystac import Collection
 from pystac_client import ItemSearch
 import requests
 import shapely
+import hashlib
 
 import config
 
@@ -45,6 +46,7 @@ def get_alaska_products(DATE_FROM, DATE_TO):
     for item in items:
         # print("Assets:", item.assets)
         filename = item.properties['physical_name']
+        product_hash = item.properties["hash"]
         filetime = datetime.strptime(item.properties['start_datetime'], '%Y-%m-%dT%H:%M:%S%z')
         year = filetime.strftime("%Y")
         month = filetime.strftime("%m")
@@ -52,11 +54,19 @@ def get_alaska_products(DATE_FROM, DATE_TO):
 
         file_dir = os.path.join(config.FILE_BASE, 'COBRA', year, month, day)
         os.makedirs(file_dir, exist_ok = True)
-        download_file = os.path.join(file_dir, filename+".download")
+        download_file = os.path.join(file_dir, filename+".nc")
+
 
         # print("properties", item.properties)
         resp = requests.get(item.assets['download'].href, stream = True)
         full_size = int(resp.headers['Content-Length'])
+
+        if os.path.exists(download_file):
+            file_hash = "md5:" + hashlib.md5(open(download_file, "rb").read(\
+            )).hexdigest()
+            if file_hash == product_hash:
+                print("Skipping", download_file, "We already have it!")
+                continue
 
         print("Downloading file",download_file, "of size:", full_size)
         downloaded_size = 0
