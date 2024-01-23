@@ -36,10 +36,12 @@ def get_alaska_products(DATE_FROM, DATE_TO):
         #sortby="-start_datetime",
         datetime = [DATE_FROM, DATE_TO],
         intersects = multipoly
-    ).get_items()
+    ).items()
+
+    items = tuple(items)
+    print("Found",len(items),"to download")
 
     items = sorted(items, key = lambda item: item.properties['start_datetime'], reverse = True)
-    print("Found",len(items),"to download")
     for item in items:
         print("Assets:", item.assets)
         filename = item.properties['physical_name']
@@ -73,7 +75,13 @@ def get_alaska_products(DATE_FROM, DATE_TO):
 
 
 if __name__ == "__main__":
-    start = datetime(2022,7,19)
+    period = 30
     end = datetime.now()
+    start = end - timedelta(days = period)
+    while start >= datetime(2022, 7, 19):
+        print("Getting data products for", start, " - ", end)
+        get_alaska_products(start, end)
+        end = start - timedelta(minutes = 1)
+        start = end -timedelta(days = period)
 
-    get_alaska_products(start, end)
+
