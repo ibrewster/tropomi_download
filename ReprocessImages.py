@@ -12,6 +12,7 @@ import warnings
 
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 
 import numpy
 try:
