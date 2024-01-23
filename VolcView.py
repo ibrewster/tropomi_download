@@ -298,7 +298,12 @@ class DataFile:
         if self._file_name[:4] == "S5P_":
             self._heights = ['1km', '7km']
             self._data_type = 'TROPOMI'
-            file_date_info = self._file_name.split("____")[1].split("_")[0]
+
+            if 'SO2CBR' in self._file_name:
+                file_date_info = self._file_name.split('_')[6]
+            else:
+                file_date_info = self._file_name.split("____")[1].split("_")[0]
+
             file_date = datetime.strptime(file_date_info, "%Y%m%dT%H%M%S")
         elif self._file_name[:4] == "OMPS":
             self._heights = ['3km', '8km']
@@ -946,7 +951,7 @@ class DataFile:
             # Save this sector to the DB
             sector_time = self._file_date
             sector_name = sector['name']
-            logging.info(f"Saving last upload time of {sector_time} for sector {sector_name}")            
+            logging.info(f"Saving last upload time of {sector_time} for sector {sector_name}")
             CHECK_SQL = f"SELECT last_update FROM {config.DB_TABLE} WHERE sector=%s"
 
             if DEBUG:

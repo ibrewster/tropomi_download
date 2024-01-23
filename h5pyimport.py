@@ -286,13 +286,25 @@ def get_filetype(file: str) -> tuple[str, dict]:
 
             # See if we can make a positive identification based on file attributes.
             if ident_attr is not None and ident_attr != "NoATTR":
+                # We may have multiple or single identifiers, so make them a list regardless.
+                if not isinstance(ident_attr, (list, tuple)):
+                    ident_attr = [ident_attr]
+
                 ident_val = fdef.get('INFO', {}).get('ident_attr', {}).get('VALUE')
-                if f.attrs.get(ident_attr, 'NoValue') == ident_val:
-                    logging.info(f"Detected file of type {ftype} based on attribute match")
-                    break  # Yay! We found the correct file format!
+                if not isinstance(ident_val, (list, tuple)):
+                    ident_val = [ident_val]
+
+                for attr,attr_val in zip(ident_attr, ident_val):
+                    if f.attrs.get(attr, 'NoValue') == attr_val:
+                        logging.info(f"Detected file of type {ftype} based on attribute match")
+                        break  # Yay! We found the correct file format!
                 else:
-                    # ident attrs don't match, this is not the file format we are looking for.
+                    # None of the ident values matched for this file, move on to the next file type
                     continue
+
+                # If we got here, then we got a value match above, so this is our desired file type.
+                # Break the file type loop.
+                break
 
             # But maybe we aren't expecting *any* attributes in the file.
             if ident_attr == 'NoATTR':

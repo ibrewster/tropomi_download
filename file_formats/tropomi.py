@@ -23,8 +23,8 @@ def _file_time(x):
 
 DEF = {
     'INFO': {
-        'ident_attr': {'NAME': 'sensor',
-                       'VALUE': b'TROPOMI'},
+        'ident_attr': {'NAME': ['sensor', 'processor_name'],
+                       'VALUE': [b'TROPOMI', b'S5P_L2_COBRASO2']},
         'nDims': 3,
         'binRadius': 1.5e4,
         'grid_x_resolution': 6660,  # In meters
