@@ -54,7 +54,7 @@ def get_alaska_products(DATE_FROM, DATE_TO):
 
         file_dir = os.path.join(config.FILE_BASE, 'COBRA', year, month, day)
         os.makedirs(file_dir, exist_ok = True)
-        download_file = os.path.join(file_dir, filename+".nc")
+        download_file = os.path.join(file_dir, filename)
 
 
         # print("properties", item.properties)
