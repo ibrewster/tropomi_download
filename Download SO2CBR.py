@@ -38,12 +38,12 @@ def get_alaska_products(DATE_FROM, DATE_TO):
         intersects = multipoly
     ).items()
 
-    items = tuple(items)
-    print("Found",len(items),"to download")
 
     items = sorted(items, key = lambda item: item.properties['start_datetime'], reverse = True)
+    print("Found",len(items),"to download")
+
     for item in items:
-        print("Assets:", item.assets)
+        # print("Assets:", item.assets)
         filename = item.properties['physical_name']
         filetime = datetime.strptime(item.properties['start_datetime'], '%Y-%m-%dT%H:%M:%S%z')
         year = filetime.strftime("%Y")
@@ -54,7 +54,7 @@ def get_alaska_products(DATE_FROM, DATE_TO):
         os.makedirs(file_dir, exist_ok = True)
         download_file = os.path.join(file_dir, filename+".download")
 
-        print("properties", item.properties)
+        # print("properties", item.properties)
         resp = requests.get(item.assets['download'].href, stream = True)
         full_size = int(resp.headers['Content-Length'])
 
