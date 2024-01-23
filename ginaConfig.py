@@ -1,4 +1,4 @@
-MQTT_SERVER = 'watchman'
+MQTT_SERVER = 'localhost'
 MQTT_TOPIC = 'GINA'
 LOG_FILE = '/var/log/gina.log'
 OMPS_DEST_DIR = '/shared/data/omps_data'
