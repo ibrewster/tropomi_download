@@ -39,6 +39,7 @@ def get_alaska_products(DATE_FROM, DATE_TO):
     ).get_items()
 
     items = sorted(items, key = lambda item: item.properties['start_datetime'], reverse = True)
+    print("Found",len(items),"to download")
     for item in items:
         print("Assets:", item.assets)
         filename = item.properties['physical_name']
@@ -72,7 +73,7 @@ def get_alaska_products(DATE_FROM, DATE_TO):
 
 
 if __name__ == "__main__":
-    start = datetime.now() - timedelta(days = 10)
+    start = datetime(2022,7,19)
     end = datetime.now()
 
     get_alaska_products(start, end)
