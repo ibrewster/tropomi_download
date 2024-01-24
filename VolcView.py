@@ -921,13 +921,15 @@ class DataFile:
         files = {'file': (filename, img)}
 
         return_codes = []
+        retries = []
         for request_url in config.VOLCVIEW_SERVERS:
+            upload_url = request_url + self._upload_path
             attempt_count = 0
             while attempt_count < 10:
                 attempt_count += 1
                 try:
                     img.seek(0)
-                    res = requests.post(request_url + self._upload_path,
+                    res = requests.post(upload_url,
                                         files=files,
                                         data=request_data,
                                         headers=request_headers)
@@ -942,7 +944,10 @@ class DataFile:
                               request_url)
 
             logging.info("%s %s %s %s", request_url, sector['name'], filename, res.status_code)
-            return_codes.append(res.status_code == 200)
+            success = res.status_code == 200
+            return_codes.append(success)
+            if not success:
+                retries.append((upload_url, filename, request_data))
 
         # Update the database with the last update time for this sector if all
         # servers succesfully received the image and we have a database specified
@@ -974,6 +979,19 @@ class DataFile:
                             cursor.connection.commit()
                         else:
                             logging.info(f"Not updating upload time as {recorded_time}>{sector_time}")
+        else:
+            # One or more upload failures for this file
+            try:                
+                failed_dir = os.path.join(config.FILE_BASE, 'failed_upload')
+                os.makedirs(failed_dir, exist_ok=True)
+                img.seek(0)
+                with open(os.path.join(failed_dir, filename), 'wb') as f:
+                    f.write(img)
+                infoname = filename.replace('.png', '.json')
+                with open(os.path.join(failed_dir, infoname), 'wb') as f:
+                    json.dump(retries, f)
+            except Exception as e:
+                logging.exception(f"Unable to save out failed file info: {e}")
 
 
 def main(data_file, use_spawn=True):
