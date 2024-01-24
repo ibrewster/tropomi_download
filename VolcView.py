@@ -981,6 +981,7 @@ class DataFile:
                             logging.info(f"Not updating upload time as {recorded_time}>{sector_time}")
         else:
             # One or more upload failures for this file
+            logging.warning("***Unable to upload image to volcview. Saving to retry later.***")
             try:                
                 failed_dir = os.path.join(config.FILE_BASE, 'failed_upload')
                 os.makedirs(failed_dir, exist_ok=True)
