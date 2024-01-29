@@ -982,15 +982,18 @@ class DataFile:
         else:
             # One or more upload failures for this file
             logging.warning("***Unable to upload image to volcview. Saving to retry later.***")
-            try:                
+
+            try:
                 failed_dir = os.path.join(config.FILE_BASE, 'failed_upload')
                 os.makedirs(failed_dir, exist_ok=True)
                 img.seek(0)
                 with open(os.path.join(failed_dir, filename), 'wb') as f:
-                    f.write(img)
+                    f.write(img.getbuffer())
+
                 infoname = filename.replace('.png', '.json')
                 with open(os.path.join(failed_dir, infoname), 'wb') as f:
                     json.dump(retries, f)
+
             except Exception as e:
                 logging.exception(f"Unable to save out failed file info: {e}")
 
