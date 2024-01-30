@@ -369,11 +369,13 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
     features = []
     while not done:
         try:
-            results = session.post(SEARCH_URL, json = search_params)
+            results = session.post(SEARCH_URL, json = search_params, timeout = 60)
         except oauthlib.oauth2.rfc6749.errors.TokenExpiredError:
             logging.error("Token expired during result fetch. Renewing.")
             session = auth_sentinelhub()
             results = session.post(SEARCH_URL, json = search_params)
+        except requests.exceptions.Timeout:
+            return None, 408
 
         if results.status_code != 200:
             logging.error(f"An error occured while searching: %i\n%s",
@@ -393,9 +395,9 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
 
     names = [{'Name': x['id']} for x in features]
     logging.info("Name list fetched and processed. Getting object ID's")
-    
-    
-    
+
+
+
     ####### This is step two. The above gives us the file names, but we then have to get the
     ####### Actual ID's we can use to download the files
     #######################################################################################
@@ -405,28 +407,28 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
             id_cache = pickle.load(cache_file)
     except FileNotFoundError:
         id_cache = {}
-        
+
     # Remove any values from the cache that are *not* in our search
     id_cache = {x['Name']: id_cache[x['Name']] for x in names if x['Name'] in id_cache}
-    
+
     # and compile a list of items we need to search for
     search_names = [x for x in names if x['Name'] not in id_cache]
-    
+
     # If an empty list, we can just use the cached values - nothing new.
     if search_names:
         # We could query this API directly, but using the catalog API first allows us to use a MultiPolygon
         odata_url = 'https://catalogue.dataspace.copernicus.eu/odata/v1/Products/OData.CSC.FilterList'
-    
+
         num_files = len(search_names)
         end_idx = num_files
-        
+
         if num_files > 19:
             num_batches = math.ceil(num_files / 19)
             batch_size = math.ceil(num_files / num_batches)
         else:
             num_batches = 1
             batch_size = num_files
-            
+
         logging.info(f"Using {num_batches} batches of size: {batch_size}")
         features = []
         start_idx = 0
@@ -434,33 +436,33 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
         if stop_idx > end_idx:
             stop_idx = end_idx
         idx = 1 # Loop counter
-    
+
         while start_idx < end_idx:
             batch = search_names[start_idx:stop_idx]
             logging.info(f"Fetching batch {idx} of {num_batches}")
             odata_request = {
                 "FilterProducts": batch,
             }
-    
+
             results = requests.post(odata_url, json = odata_request)
             results_object = results.json()
             features += results_object['value'] #Object ID's to download
-            
+
             # Increment indexes for next batch
             start_idx = stop_idx
             stop_idx = start_idx + batch_size
             if stop_idx > end_idx:
                 stop_idx = end_idx
             idx += 1
-    
+
         # Update the cached name/ID list
         id_cache.update({x['Name']: x for x in features})
 
-    # Even if we didn't do any searching, id_cache may have changed due to older files timing out, 
+    # Even if we didn't do any searching, id_cache may have changed due to older files timing out,
     # so save it.
     with open(id_cache_file, 'wb') as cache_file:
         pickle.dump(id_cache, cache_file)
-        
+
     features = list(id_cache.values())
     features.sort(key = lambda x: x['OriginDate'], reverse = True)
     return features, 200
@@ -493,7 +495,7 @@ def download(use_preop: bool = True):
     ###########################
 
     logging.info(f"Searching for files from {DATE_FROM} to {DATE_TO}")
-    try:        
+    try:
         if use_preop:
             results_object, code = get_file_list(DATE_FROM, DATE_TO)
             download_func = download_file
