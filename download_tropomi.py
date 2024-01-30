@@ -586,7 +586,10 @@ def download(use_preop: bool = True):
             open(UPDATE_FILE, 'w').close()
         except Exception as e:
             logging.exception("Failed to load file %s. Will try again later.", file_name)
-            os.unlink(file_name + ".download")
+            try:
+                os.unlink(file_name + ".download")
+            except FileNotFoundError:
+                pass # File doesn't exist. Weird, but that *was* the goal here...
             # Don't create a skipped file for this, since we don't know what
             # went wrong. That way we will try again later.
         else:
