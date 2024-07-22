@@ -172,7 +172,10 @@ def _initalize_image_widgets(file_date, band, dtype, satelite = ''):
     date_label = QLabel()
     if band is None:
         band = "Cloud"
-    date_label.setText(f"{file_date.strftime('%Y-%m-%d %H:%M:%S')} UTC {dtype} {satelite} {band}")
+    if satelite:
+        date_label.setText(f"{file_date.strftime('%Y-%m-%d %H:%M:%S')} UTC {dtype} {satelite} {band}")
+    else:
+        date_label.setText(f"{file_date.strftime('%Y-%m-%d %H:%M:%S')} UTC {dtype} {band}")
     date_label.setStyleSheet('color:#eee; background-color:rgba(0, 0, 0, 0.4); padding:2px 7px;')
     date_label_font = date_label.font()
     date_label_font.setPointSize(9)
@@ -299,7 +302,7 @@ class DataFile:
         if self._file_name[:4] == "S5P_":
             self._heights = ['1km', '7km']
             self._data_type = 'TROPOMI'
-            self._satelite = self._file_name[:3]
+            # self._satelite = self._file_name[:3]
 
             if 'SO2CBR' in self._file_name:
                 file_date_info = self._file_name.split('_')[6]
@@ -316,7 +319,7 @@ class DataFile:
         elif self._file_name.startswith('V'):
             self._heights = ['SO2index']
             self._data_type = "VIIRS"
-            self._satelite = self._file_name[-9:-5]
+            # self._satelite = self._file_name[-9:-5]
             self._bands = ('SO2', )
             file_date_info = self._file_name[1:14]
             file_date = datetime.strptime(file_date_info, '%Y%j%H%M%S')
