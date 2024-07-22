@@ -113,7 +113,7 @@ def _gen_sector_bounds(sectors):
 LAT_LON_PROJ = pyproj.Proj('epsg:4326', preserve_units=False)
 
 
-def _initalize_image_widgets(file_date, band, dtype):
+def _initalize_image_widgets(file_date, band, dtype, satelite = ''):
     """Set up the various QT widgets used to display the plot"""
     # Set up display widgets
     try:
@@ -147,7 +147,7 @@ def _initalize_image_widgets(file_date, band, dtype):
     date_label = QLabel()
     if band is None:
         band = "Cloud"
-    date_label.setText(f"{file_date.strftime('%Y-%m-%d %H:%M:%S')} UTC {dtype} {band}")
+    date_label.setText(f"{file_date.strftime('%Y-%m-%d %H:%M:%S')} UTC {dtype} {satelite} {band}")
     date_label.setStyleSheet('color:#eee; background-color:rgba(0, 0, 0, 0.4); padding:2px 7px;')
     date_label_font = date_label.font()
     date_label_font.setPointSize(9)
@@ -191,6 +191,7 @@ class DataFile:
     _view_extents = None
     _proj_str = ''
     _laea_transformer = None
+    _satelite = ''
 
     def __init__(self, data_file, sectors = config.VOLCVIEW_SECTORS):
         # Check some values
@@ -214,16 +215,19 @@ class DataFile:
         if self._file_name[:4] == "S5P_":
             self._heights = ['1km', '7km']
             self._data_type = 'TROPOMI'
+            self._satelite = self._file_name[:3]
             file_date_info = self._file_name.split("____")[1].split("_")[0]
             file_date = datetime.strptime(file_date_info, "%Y%m%dT%H%M%S")
         elif self._file_name[:4] == "OMPS":
             self._heights = ['TRL', 'TRM']
             self._data_type = 'OMPS'
+            self._satelite = self._file_name[5:8]
             file_date_info = self._file_name.split("_")[3]
             file_date = datetime.strptime(file_date_info, "%Ym%m%dt%H%M%S")
         elif self._file_name.startswith('V'):
             self._heights = ['SO2index']
             self._data_type = "VIIRS"
+            self._satelite = self._file_name[-9:-5]
             self._bands = ('SO2', )
             file_date_info = self._file_name[1:14]
             file_date = datetime.strptime(file_date_info, '%Y%j%H%M%S')
@@ -568,7 +572,8 @@ class DataFile:
         (plot_item, scale_widget,
          disp_widget, date_label) = _initalize_image_widgets(self._file_date,
                                                              band,
-                                                             self._data_type)
+                                                             self._data_type,
+                                                             self._satelite)
 
         # Add the total mass to the date label
         if sector['sector'] == '1kmHIKI':
