@@ -19,9 +19,6 @@ logging.basicConfig(filename=ginaConfig.LOG_FILE,
 
 if __name__ == "__main__":
     files = sys.argv[1:]
-    
-    client = mqtt.Client()
-    client.connect(ginaConfig.MQTT_SERVER)
 
     logging.info("Got file_info of: %s", str(files))
     for file in files:
@@ -35,9 +32,14 @@ if __name__ == "__main__":
             exit(1)
 
         logging.info("Processing file %s", file)
-        client.publish('GINA', file)
+        client = mqtt.Client()
+        client.connect(ginaConfig.MQTT_SERVER)
+        result=client.publish('GINA', file)
+        if result.rc != mqtt.MQTT_ERR_SUCCESS:
+            logging.error("Failed to publish file %s: %s", file, result.rc)
+        result.wait_for_publish()
+        client.disconnect()
+        logging.info("Published message to MQTT Server")
         continue
 
     logging.info("Complete")
-    with open('/tmp/watchmanPython.log', 'a') as logfile:
-        logfile.write("Complete\n")

@@ -995,7 +995,7 @@ class DataFile:
                 failed_dir = os.path.join(config.FILE_BASE, 'failed_upload')
                 os.makedirs(failed_dir, exist_ok=True)
                 img.seek(0)
-                logging.warning(f"File size: {img.len}")
+                logging.warning(f"File size: {img.getbuffer().nbytes}")
                 with open(os.path.join(failed_dir, filename), 'wb') as f:
                     f.write(img.getbuffer())
 
