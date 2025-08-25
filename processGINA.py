@@ -30,6 +30,7 @@ def future_complete(filename, future):
     try:
         result = future.result()
     except process.BrokenProcessPool:
+        logging.error("!!!!!!!!Process pool died. Re-creating")
         create_process_pool()
     except:
         logging.exception("An exception occured while processing file")
