@@ -107,7 +107,7 @@ def on_message(client, userdata, message):
 
 if __name__ == "__main__":
     spawn_context = multiprocessing.get_context('spawn')
-    executor = ProcessPoolExecutor(4, max_tasks_per_child = 1, mp_context = spawn_context)
+    executor = ProcessPoolExecutor(3, max_tasks_per_child = 1, mp_context = spawn_context)
 
     client = mqtt.Client()
     client.connect(ginaConfig.MQTT_SERVER)
