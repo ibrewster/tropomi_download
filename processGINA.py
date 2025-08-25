@@ -1,4 +1,7 @@
 #!/shared/apps/so2_processing/env/bin/python
+
+import multiprocessing
+
 import ginaConfig
 
 from VolcView import main as genVolcView
@@ -29,29 +32,29 @@ def future_complete(filename, future):
     except:
         logging.exception("An exception occured while processing file")
         result = future
-        
+
     logging.info(f"Completed processing of {filename} with return value {result}")
-    
+
 
 def on_message(client, userdata, message):
     """
     Process an incomming MQTT message.
-    
+
     message is an instance of MQTTMessage, a class with members topic, payload, qos and retain
     the payload should be the filename to be processed
     """
     global executor
-    
+
     try:
         file = message.payload.decode()
         logging.info("Received message to process %s", file)
-        
+
         file_name = os.path.basename(file)
-    
+
         if not file_name.endswith('.h5') or not os.path.isfile(file):
             logging.info("Skipping file due to not supported issue")
             return
-    
+
         if file_name.startswith('V'):
             # VIIRS file
             logging.debug("Detected VIIRS file")
@@ -65,14 +68,14 @@ def on_message(client, userdata, message):
             date_part = file_parts[3]
             date_format = '%Ym%m%dt%H%M%S'
             DEST_PATH = ginaConfig.OMPS_DEST_DIR
-    
+
         file_time = datetime.strptime(date_part, date_format)
         file_time = file_time.replace(tzinfo=timezone.utc)
         formatted_date = file_time.strftime('%Y-%m-%d')
-    
+
         os.makedirs(f"{DEST_PATH}/{formatted_date}", exist_ok=True)
         dest_file = f"{DEST_PATH}/{formatted_date}/{file_name}"
-    
+
         logging.info("Filing %s in %s",
                      f"{SRC_PATH}/{file_name}",
                      dest_file
@@ -82,11 +85,11 @@ def on_message(client, userdata, message):
         except Exception as e:
             logging.exception(f"Unable to file {file_name}")
             return
-    
+
         logging.info("Filed: %s %s", file_name, formatted_date)
-    
+
         logging.info("Generating volc view images")
-    
+
         # Fire and forget
         complete_callback = partial(future_complete, file_name)
         try:
@@ -95,7 +98,7 @@ def on_message(client, userdata, message):
             logging.exception("Process pool broken. Creating a new one and trying again.")
             executor = ProcessPoolExecutor(4, max_tasks_per_child = 1)
             future = executor.submit(genVolcView, dest_file, False)
-            
+
         future.add_done_callback(complete_callback)
         # genVolcView(dest_file, False)
     except Exception:
@@ -103,8 +106,9 @@ def on_message(client, userdata, message):
 
 
 if __name__ == "__main__":
-    executor = ProcessPoolExecutor(4, max_tasks_per_child = 1)
-    
+    spawn_context = multiprocessing.get_context('spawn')
+    executor = ProcessPoolExecutor(4, max_tasks_per_child = 1, mp_context = spawn_context)
+
     client = mqtt.Client()
     client.connect(ginaConfig.MQTT_SERVER)
     client.on_message = on_message
