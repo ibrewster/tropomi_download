@@ -29,6 +29,8 @@ SRC_PATH = '/gina_root/upload'
 def future_complete(filename, future):
     try:
         result = future.result()
+    except process.BrokenProcessPool:
+        create_process_pool()
     except:
         logging.exception("An exception occured while processing file")
         result = future
@@ -104,10 +106,13 @@ def on_message(client, userdata, message):
     except Exception:
         logging.exception("Unable to process message")
 
-
-if __name__ == "__main__":
+def create_process_pool():
+    global executor
     spawn_context = multiprocessing.get_context('spawn')
     executor = ProcessPoolExecutor(3, max_tasks_per_child = 1, mp_context = spawn_context)
+
+if __name__ == "__main__":
+    create_process_pool()
 
     client = mqtt.Client()
     client.connect(ginaConfig.MQTT_SERVER)
