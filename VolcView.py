@@ -77,7 +77,7 @@ class DBCursor():
         self._conn.close()
 
 def error_callback(err):
-    print(f"Got error: {err}")
+    logging.error(f"Got error in altitude pool process: {err}")
 
 def PolyArea(x, y):
     """Calculate the area of a polygon using native numpy math and the shoelace formula
