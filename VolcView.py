@@ -979,14 +979,13 @@ class DataFile:
                 with DBCursor() as cursor:
                     cursor.execute(CHECK_SQL, (sector_name, self._data_type))
                     recorded_time = cursor.fetchone()
-                    if recorded_time:
-                        recorded_time = recorded_time[0]
-                        if recorded_time < sector_time:
-                            logging.info(f"Recorded time of {recorded_time} is before our time. Updating")
-                            cursor.execute(SQL, (sector_name, sector_time, self._data_type))
-                            cursor.connection.commit()
-                        else:
-                            logging.info(f"Not updating upload time as {recorded_time}>{sector_time}")
+
+                    if recorded_time is None or recorded_time[0] < sector_time:
+                        logging.info(f"Recorded time of {recorded_time} is before our time. Updating")
+                        cursor.execute(SQL, (sector_name, sector_time, self._data_type))
+                        cursor.connection.commit()
+                    else:
+                        logging.info(f"Not updating upload time as {recorded_time}>{sector_time}")
         else:
             # One or more upload failures for this file
             logging.warning("***Unable to upload image to volcview. Saving to retry later.***")
