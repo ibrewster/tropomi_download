@@ -971,9 +971,9 @@ class DataFile:
                 logging.info("Not saving to database as we are in debug mode")
             else:
                 SQL = f"""
-                INSERT INTO {config.DB_TABLE} (sector,last_update)
-                VALUES (%s,%s)
-                ON CONFLICT (sector) DO UPDATE
+                INSERT INTO {config.DB_TABLE} (sector,last_update,type)
+                VALUES (%s,%s,%s)
+                ON CONFLICT (sector,type) DO UPDATE
                 set last_update=EXCLUDED.last_update
                 """
                 with DBCursor() as cursor:
@@ -983,7 +983,7 @@ class DataFile:
                         recorded_time = recorded_time[0]
                         if recorded_time < sector_time:
                             logging.info(f"Recorded time of {recorded_time} is before our time. Updating")
-                            cursor.execute(SQL, (sector_name, sector_time))
+                            cursor.execute(SQL, (sector_name, sector_time, self._data_type))
                             cursor.connection.commit()
                         else:
                             logging.info(f"Not updating upload time as {recorded_time}>{sector_time}")
