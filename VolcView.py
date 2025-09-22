@@ -982,8 +982,11 @@ class DataFile:
 
                     if recorded_time is None or recorded_time[0] < sector_time:
                         logging.info(f"Recorded time of {recorded_time} is before our time. Updating")
-                        cursor.execute(SQL, (sector_name, sector_time, self._data_type))
-                        cursor.connection.commit()
+                        try:
+                            cursor.execute(SQL, (sector_name, sector_time, self._data_type))
+                            cursor.connection.commit()
+                        except Exception as e:
+                            print("Unable to update DB:", e);
                     else:
                         logging.info(f"Not updating upload time as {recorded_time}>{sector_time}")
         else:
