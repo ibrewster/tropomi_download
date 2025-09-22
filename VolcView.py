@@ -964,8 +964,8 @@ class DataFile:
             # Save this sector to the DB
             sector_time = self._file_date
             sector_name = sector['name']
-            logging.info(f"Saving last upload time of {sector_time} for sector {sector_name}")
-            CHECK_SQL = f"SELECT last_update FROM {config.DB_TABLE} WHERE sector=%s"
+            logging.info(f"Saving last upload time of {sector_time} for sector {sector_name}, {self._data_type}")
+            CHECK_SQL = f"SELECT last_update FROM {config.DB_TABLE} WHERE sector=%s AND type=%s"
 
             if DEBUG:
                 logging.info("Not saving to database as we are in debug mode")
@@ -977,7 +977,7 @@ class DataFile:
                 set last_update=EXCLUDED.last_update
                 """
                 with DBCursor() as cursor:
-                    cursor.execute(CHECK_SQL, (sector_name, ))
+                    cursor.execute(CHECK_SQL, (sector_name, self._data_type))
                     recorded_time = cursor.fetchone()
                     if recorded_time:
                         recorded_time = recorded_time[0]
