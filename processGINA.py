@@ -30,8 +30,7 @@ def on_message(client, userdata, message):
     message is an instance of MQTTMessage, a class with members topic, payload, qos and retain
     the payload should be the filename to be processed
     """
-    global executor
-
+    logging.info("!!! MESSAGE RECEIVED - HANDLER CALLED !!!")
     try:
         file = message.payload.decode()
         logging.info("Received message to process %s", file)
