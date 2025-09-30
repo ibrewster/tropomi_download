@@ -95,7 +95,7 @@ def on_disconnect(client, userdata, rc):
         logging.info("MQTT disconnected cleanly")
 
 if __name__ == "__main__":
-    client = mqtt.Client(client_id="gina_processing", clean_session=False)
+    client = mqtt.Client(client_id="gina_processing", clean_session=True)
     client.on_message = on_message
     client.on_connect = on_connect
     client.on_disconnect = on_disconnect
