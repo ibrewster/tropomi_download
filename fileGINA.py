@@ -31,7 +31,7 @@ if __name__ == "__main__":
             logging.info("File transfer still in process. Not processing")
             exit(1)
 
-        logging.info("Processing file %s", file)
+        logging.info("Submitting file %s for processing", file)
         client = mqtt.Client()
         client.connect(ginaConfig.MQTT_SERVER)
         result=client.publish('GINA', file, qos=2)
