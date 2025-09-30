@@ -1,6 +1,6 @@
 #!/shared/apps/so2_processing/env/bin/python
-
-import multiprocessing
+from functools import partial
+from concurrent.futures import ThreadPoolExecutor
 
 import ginaConfig
 
@@ -22,6 +22,16 @@ logging.basicConfig(filename=ginaConfig.LOG_FILE,
 
 SRC_PATH = '/gina_root/upload'
 
+executor = ThreadPoolExecutor(max_workers=1)
+
+
+def future_complete(filename, future):
+    try:
+        result = future.result()
+        logging.info(f"Completed processing of {filename} with return value {result}")
+    except Exception:
+        logging.exception("An exception occurred while processing file")
+        
 
 def on_message(client, userdata, message):
     """
@@ -68,7 +78,7 @@ def on_message(client, userdata, message):
                      )
         try:
             shutil.move(f"{SRC_PATH}/{file_name}", dest_file)
-        except Exception as e:
+        except Exception:
             logging.exception(f"Unable to file {file_name}")
             return
 
@@ -76,8 +86,10 @@ def on_message(client, userdata, message):
 
         logging.info("Generating volc view images")
         try:
-            result = genVolcView(dest_file)
-            logging.info(f"Completed processing of {file_name} with return value {result}")
+            future = executor.submit(genVolcView, dest_file)
+            complete_callback = partial(future_complete, file_name)
+            future.add_done_callback(complete_callback)
+            # result = genVolcView(dest_file)
         except Exception:
             logging.exception(f"An exception occured while processing {file_name}")
     except Exception:
