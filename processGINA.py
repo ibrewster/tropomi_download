@@ -33,8 +33,8 @@ def future_complete(filename, future):
         logging.error("!!!!!!!!Process pool died. Re-creating")
         create_process_pool()
         result="Process Pool Restart"
-    except:
-        logging.exception("An exception occured while processing file")
+    except Exception:
+        logging.exception("An exception occurred while processing file")
         result = future
 
     logging.info(f"Completed processing of {filename} with return value {result}")
@@ -42,7 +42,7 @@ def future_complete(filename, future):
 
 def on_message(client, userdata, message):
     """
-    Process an incomming MQTT message.
+    Process an incoming MQTT message.
 
     message is an instance of MQTTMessage, a class with members topic, payload, qos and retain
     the payload should be the filename to be processed
@@ -100,24 +100,53 @@ def on_message(client, userdata, message):
             future = executor.submit(genVolcView, dest_file, False)
         except process.BrokenProcessPool:
             logging.exception("Process pool broken. Creating a new one and trying again.")
-            executor = ProcessPoolExecutor(4, max_tasks_per_child = 1)
+            create_process_pool()
             future = executor.submit(genVolcView, dest_file, False)
 
         future.add_done_callback(complete_callback)
         # genVolcView(dest_file, False)
     except Exception:
         logging.exception("Unable to process message")
+        
+def on_connect(client: mqtt.Client, userdata, flags, rc):
+    logging.info(f"Connected to MQTT broker with result code {rc}")
+    client.subscribe('GINA', qos=2)
+    logging.info("Subscribed to GINA topic")
 
 def create_process_pool():
     global executor
+    old_executor = executor
     spawn_context = multiprocessing.get_context('spawn')
-    executor = ProcessPoolExecutor(3, max_tasks_per_child = 1, mp_context = spawn_context)
+    executor = ProcessPoolExecutor(max_workers=2, max_tasks_per_child = 1, mp_context = spawn_context)
+    
+    if old_executor:
+        try:
+            old_executor.shutdown(wait=False, cancel_futures=False)
+        except Exception:
+            logging.exception("Error shutting down old executor")
+            
+def on_disconnect(client, userdata, rc):
+    if rc != 0:
+        logging.warning(f"Unexpected MQTT disconnect. Code: {rc}. Client will auto-reconnect.")
+    else:
+        logging.info("MQTT disconnected cleanly")
 
 if __name__ == "__main__":
     create_process_pool()
 
-    client = mqtt.Client()
-    client.connect(ginaConfig.MQTT_SERVER)
+    client = mqtt.Client(client_id="gina_processing", clean_session=False)
     client.on_message = on_message
-    client.subscribe('GINA')
-    client.loop_forever(retry_first_connection = True)
+    client.on_connect = on_connect
+    client.on_disconnect = on_disconnect
+    client.connect(ginaConfig.MQTT_SERVER)    
+    # client.subscribe('GINA')
+    
+    try:
+        client.loop_forever(retry_first_connection = True)
+    except KeyboardInterrupt:
+        logging.info("Shutting down...")
+    finally:
+        client.disconnect()
+        if executor:
+            executor.shutdown(wait=True, cancel_futures=False)
+        logging.info("Shutdown complete")

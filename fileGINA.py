@@ -34,7 +34,7 @@ if __name__ == "__main__":
         logging.info("Processing file %s", file)
         client = mqtt.Client()
         client.connect(ginaConfig.MQTT_SERVER)
-        result=client.publish('GINA', file)
+        result=client.publish('GINA', file, qos=2)
         if result.rc != mqtt.MQTT_ERR_SUCCESS:
             logging.error("Failed to publish file %s: %s", file, result.rc)
         result.wait_for_publish()
