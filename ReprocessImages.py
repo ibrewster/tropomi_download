@@ -854,7 +854,8 @@ class DataFile:
         if len(heights) > 1:
             pool = self._mpctx.Pool(processes = len(heights),
                                     maxtasksperchild = 1,
-                                    initializer = init_logging)
+                                    initializer = init_logging,
+                                    initargs = ('/var/log/TROPOMI-Reprocess.log', ))
 
         for idx, alt in enumerate(heights):
             output_data_col = f"normalized_du_{alt}"
@@ -1025,7 +1026,7 @@ def main(data_file, use_spawn=True):
 
 
 if __name__ == "__main__":
-    init_logging()
+    init_logging('/var/log/TROPOMI-Reprocess.log')
     parser = argparse.ArgumentParser(description = "SO2 data file interface to VolcView")
     parser.add_argument("files", nargs = "*", default = [],
                         help = "SO2 data files to generate and upload VolcView images for")

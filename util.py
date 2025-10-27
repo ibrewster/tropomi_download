@@ -3,10 +3,13 @@ import logging
 import config
 
 
-def init_logging():
+def init_logging(LOG_FILE = None):
+    if LOG_FILE is None:
+        LOG_FILE = config.LOG_FILE
+
     logging.basicConfig(level=logging.DEBUG,
                         format=config.LOG_FORMAT,
-                        filename=config.LOG_FILE,
+                        filename=LOG_FILE,
                         filemode='a')
 
     # Logging handler to output to the console when running
@@ -14,7 +17,7 @@ def init_logging():
     ch.setLevel(config.LOG_CONSOLE_LEVEL)
 
     # Logging handler to output to the log file
-    fh = logging.FileHandler(config.LOG_FILE)
+    fh = logging.FileHandler(LOG_FILE)
     fh.setLevel(config.LOG_FILE_LEVEL)
 
     formatter = logging.Formatter(config.LOG_FORMAT)
