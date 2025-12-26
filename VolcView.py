@@ -1002,7 +1002,7 @@ class DataFile:
                     f.write(img.getbuffer())
 
                 infoname = filename.replace('.png', '.json')
-                with open(os.path.join(failed_dir, infoname), 'wb') as f:
+                with open(os.path.join(failed_dir, infoname), 'w') as f:
                     json.dump(retries, f)
 
             except Exception as e:
