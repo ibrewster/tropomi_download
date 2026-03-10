@@ -241,8 +241,8 @@ def download():
     DATE_FROM = from_date.strftime("%Y-%m-%d")
 
     ######DEBUG - REMOVE#######
-    #DATE_FROM = "2024-03-05"
-    #DATE_TO = "2023-07-20T11:00:00Z"
+    # DATE_FROM = "2026-03-09"
+    # DATE_TO = "2023-07-20T11:00:00Z"
     ###########################
 
     logging.info(f"Searching for files from {DATE_FROM} to {DATE_TO}")

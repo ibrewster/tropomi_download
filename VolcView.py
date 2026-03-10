@@ -262,6 +262,23 @@ def check_api(request_url):
 
     logging.info("All required bands/types created")
 
+def save_sector_mass(sector, img_date, alt):
+    alt_lookup = {'MidTrop': '7km',
+                  'LowTrop': '1km',}
+    if not alt in alt_lookup:
+        return # Only save low and mid trop
+
+    SQL = """WITH sector AS (
+        SELECT id FROM sectors WHERE name=%s
+    )
+    INSERT INTO ts (sector, type, record_date, record_value, altitude)
+    SELECT id, 'TROPOMI', %s, %s, %s --no rows selected if sector not found
+    FROM sector"""
+    print(f"Saving  mass for sector {sector['name']}")
+
+    with DBCursor() as cursor:
+        cursor.execute(SQL, (sector['name'], img_date, sector['mass'], alt_lookup[alt]))
+        cursor.connection.commit()
 
 class DataFile:
     use_spawn = True
@@ -650,6 +667,10 @@ class DataFile:
                 print("TEST UPLOAD", sector['name'], filename, "***200***")
 
             logging.debug("Image upload complete")
+            try:
+                save_sector_mass(sector, self._file_date, band)
+            except Exception:
+                logging.exception(f"Unable to save mass for sector {sector['name']}")
 
             if DEBUG:
                 # This is just Debugging code to save the generated
