@@ -262,7 +262,7 @@ def check_api(request_url):
 
     logging.info("All required bands/types created")
 
-def save_sector_mass(sector, img_date, alt):
+def save_sector_mass(sector, img_date, alt, url):
     alt_lookup = {'MidTrop': '7km',
                   'LowTrop': '1km',}
     if not alt in alt_lookup:
@@ -271,13 +271,21 @@ def save_sector_mass(sector, img_date, alt):
     SQL = """WITH sector AS (
         SELECT id FROM sectors WHERE name=%s
     )
-    INSERT INTO ts (sector, type, record_date, record_value, altitude)
-    SELECT id, 'TROPOMI', %s, %s, %s --no rows selected if sector not found
-    FROM sector"""
+    INSERT INTO ts (sector, type, record_date, record_value, altitude,img_url)
+    SELECT id, 'TROPOMI', %s, %s, %s, %s --no rows selected if sector not found
+    FROM sector
+    ON CONFLICT (sector, record_date, type, altitude)
+    DO UPDATE SET
+        record_value = EXCLUDED.record_value,
+        img_url = EXCLUDED.img_url
+    """
     print(f"Saving  mass for sector {sector['name']}")
 
     with DBCursor() as cursor:
-        cursor.execute(SQL, (sector['name'], img_date, sector['mass'], alt_lookup[alt]))
+        cursor.execute(
+            SQL,
+            (sector['name'], img_date, sector['mass'], alt_lookup[alt], url)
+        )
         cursor.connection.commit()
 
 class DataFile:
@@ -462,6 +470,7 @@ class DataFile:
     def _plot_altitude(self, dataset, band, sector):
         print(f"Beginning generation for {band}")
         good = True # Assume good plot
+        img_url = None # For the volcview URL, if uploaded.
         percent_widgets = []
 
         try:
@@ -660,7 +669,7 @@ class DataFile:
             file_stream.seek(0)  # Go back to the begining for reading out
             logging.debug("Uploading image for %s", band)
             if not DEBUG:
-                self._volcview_upload(file_stream, sector, band)
+                img_url = self._volcview_upload(file_stream, sector, band)
             else:
                 logging.debug("******Pretending to send to volc view")
 
@@ -668,7 +677,7 @@ class DataFile:
 
             logging.debug("Image upload complete")
             try:
-                save_sector_mass(sector, self._file_date, band)
+                save_sector_mass(sector, self._file_date, band, img_url)
             except Exception:
                 logging.exception(f"Unable to save mass for sector {sector['name']}")
 
@@ -951,6 +960,9 @@ class DataFile:
 
         return_codes = []
         retries = []
+        usgs_url = None
+        avo_url = None
+
         for request_url in config.VOLCVIEW_SERVERS:
             upload_url = request_url + self._upload_path
             attempt_count = 0
@@ -977,6 +989,11 @@ class DataFile:
             return_codes.append(success)
             if not success:
                 retries.append((upload_url, filename, request_data))
+            else:
+                if 'avo' in request_url.lower():
+                    avo_url = res.json()['imageUrl']
+                else:
+                    usgs_url = res.json()['imageUrl']
 
         # Update the database with the last update time for this sector if all
         # servers succesfully received the image and we have a database specified
@@ -1028,6 +1045,8 @@ class DataFile:
 
             except Exception as e:
                 logging.exception(f"Unable to save out failed file info: {e}")
+
+        return usgs_url or avo_url
 
 
 def main(data_file, use_spawn=True):
