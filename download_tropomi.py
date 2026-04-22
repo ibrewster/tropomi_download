@@ -7,6 +7,9 @@ import boto3
 import oauthlib
 from oauthlib.oauth2 import BackendApplicationClient
 
+from botocore.config import Config
+from boto3.s3.transfer import TransferConfig
+
 from requests_oauthlib import OAuth2Session
 
 import shelve
@@ -263,14 +266,26 @@ def download():
     volc_points = [geometry.Point(x['longitude'], x['latitude']) for x in volcanos]
 
     UPDATE_FILE = os.path.join(config.FILE_BASE, DEST_DIR, 'LAST_UPDATE_MARKER.txt')
-
+    boto_config = Config(
+        read_timeout=120,
+        connect_timeout=60,
+        retries={'max_attempts': 10, 'mode': 'standard'}
+    )
     s3 = boto3.resource(
         's3',
         endpoint_url='https://eodata.dataspace.copernicus.eu',
         aws_access_key_id=config.S3_ACCESS_KEY,
         aws_secret_access_key=config.S3_SECRET_KEY,
-        region_name='default'
+        region_name='default',
+        config=boto_config
     )
+
+    transfer_config = TransferConfig(
+        use_threads=True,
+        max_concurrency=5,
+        num_download_attempts=10
+    )
+
     s3_bucket = s3.Bucket("eodata")
 
     for idx, product in enumerate(results_object):
@@ -303,7 +318,7 @@ def download():
         s3_file = f"{key}/{product['Name']}"
         download_name = file_name + ".download"
         try:
-            s3_bucket.download_file(s3_file, download_name)
+            s3_bucket.download_file(s3_file, download_name,Config=transfer_config)
         except Exception as e:
             logging.exception(f"Unable to download file: {e}")
             continue
