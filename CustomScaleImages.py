@@ -280,8 +280,8 @@ class DataFile:
     _laea_transformer = None
     _percentile_levels = (90, 95, 97, 99, 100)
     _satelite = ''
-    _scale_start = 10
-    _scale_stop = 0
+    _scale_start = 0
+    _scale_stop = 10
 
     def __init__(self, data_file, sectors = config.VOLCVIEW_SECTORS):
         # Check some values
