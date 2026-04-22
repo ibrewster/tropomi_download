@@ -12,7 +12,6 @@ import warnings
 
 from datetime import datetime
 from io import BytesIO
-from pathlib import Path
 
 import numpy
 try:
@@ -78,7 +77,7 @@ class DBCursor():
         self._conn.close()
 
 def error_callback(err):
-    print(f"Got error: {err}")
+    logging.error(f"Got error in altitude pool process: {err}")
 
 def PolyArea(x, y):
     """Calculate the area of a polygon using native numpy math and the shoelace formula
@@ -145,7 +144,7 @@ def _gen_sector_bounds(sectors):
 LAT_LON_PROJ = pyproj.Proj('epsg:4326', preserve_units=False)
 
 
-def _initalize_image_widgets(file_date, band, dtype):
+def _initalize_image_widgets(file_date, band, dtype, satelite = ''):
     """Set up the various QT widgets used to display the plot"""
     # Set up display widgets
     pg.setConfigOptions(background='#EEE', foreground='k')
@@ -173,7 +172,10 @@ def _initalize_image_widgets(file_date, band, dtype):
     date_label = QLabel()
     if band is None:
         band = "Cloud"
-    date_label.setText(f"{file_date.strftime('%Y-%m-%d %H:%M:%S')} UTC {dtype} {band}")
+    if satelite:
+        date_label.setText(f"{file_date.strftime('%Y-%m-%d %H:%M:%S')} UTC {dtype} {satelite} {band}")
+    else:
+        date_label.setText(f"{file_date.strftime('%Y-%m-%d %H:%M:%S')} UTC {dtype} {band}")
     date_label.setStyleSheet('color:#eee; background-color:rgba(0, 0, 0, 0.4); padding:2px 7px;')
     date_label_font = date_label.font()
     date_label_font.setPointSize(9)
@@ -277,6 +279,7 @@ class DataFile:
     _proj_str = ''
     _laea_transformer = None
     _percentile_levels = (90, 95, 97, 99, 100)
+    _satelite = ''
 
     def __init__(self, data_file, sectors = config.VOLCVIEW_SECTORS):
         # Check some values
@@ -299,6 +302,7 @@ class DataFile:
         if self._file_name[:4] == "S5P_":
             self._heights = ['1km', '7km']
             self._data_type = 'TROPOMI'
+            # self._satelite = self._file_name[:3]
 
             if 'SO2CBR' in self._file_name:
                 file_date_info = self._file_name.split('_')[6]
@@ -309,11 +313,13 @@ class DataFile:
         elif self._file_name[:4] == "OMPS":
             self._heights = ['3km', '8km']
             self._data_type = 'OMPS'
+            self._satelite = self._file_name[5:8]
             file_date_info = self._file_name.split("_")[3]
             file_date = datetime.strptime(file_date_info, "%Ym%m%dt%H%M%S")
         elif self._file_name.startswith('V'):
             self._heights = ['SO2index']
             self._data_type = "VIIRS"
+            # self._satelite = self._file_name[-9:-5]
             self._bands = ('SO2', )
             file_date_info = self._file_name[1:14]
             file_date = datetime.strptime(file_date_info, '%Y%j%H%M%S')
@@ -395,7 +401,8 @@ class DataFile:
         (plot_item, scale_widget,
          disp_widget, date_label) = _initalize_image_widgets(self._file_date,
                                                              band,
-                                                             self._data_type)
+                                                             self._data_type,
+                                                             self._satelite)
 
         if band != 'cloud':
             _percentContainer = QWidget()
@@ -630,35 +637,34 @@ class DataFile:
                                      filename)
             os.makedirs(os.path.dirname(save_file), exist_ok = True)
             pil_img.save(save_file, format = 'PNG')
-            file_stream = BytesIO()
-            # "Save" the image to memory in PNG format
-            pil_img.save(file_stream, format='PNG')
-            file_stream.seek(0)  # Go back to the begining for reading out
-            logging.debug("Uploading image for %s", band)
-            if not DEBUG:
-                self._volcview_upload(file_stream, sector, band)
-            else:
-                logging.debug("******Pretending to send to volc view")
+            # file_stream = BytesIO()
+            # # "Save" the image to memory in PNG format
+            # pil_img.save(file_stream, format='PNG')
+            # file_stream.seek(0)  # Go back to the begining for reading out
+            # logging.debug("Uploading image for %s", band)
+            # if not DEBUG:
+                # self._volcview_upload(file_stream, sector, band)
+            # else:
+                # logging.debug("******Pretending to send to volc view")
 
-                print("TEST UPLOAD", sector['name'], filename, "***200***")
+                # print("TEST UPLOAD", sector['name'], filename, "***200***")
 
-            logging.debug("Image upload complete")
+            # logging.debug("Image upload complete")
 
-            if DEBUG:
-                pass
-                # This is just Debugging code to save the generated
-                # image to disk for local analysis.
-                # Feel free to change file paths to something more
-                # appropriate if desired.
-                #print(f"^^^^SAVING IMAGE FOR FILE TO DISK^^^")
-                #dest_dir = f"/shared/data/tropomi_data/VolcView/COBRA/{sector['sector']}"
-                #os.makedirs(dest_dir, exist_ok=True)
-                #dest_file = f"{self._data_type}-{band}-{self._file_date.strftime('%Y_%m_%d_%H%M%S')}.png"
-                #dest_path = os.path.join(dest_dir, dest_file)
-                #file_stream.seek(0)
-                #with open(dest_path, 'wb') as f:
-                #    f.write(file_stream.read())
-            ###################
+            # if DEBUG:
+                # # This is just Debugging code to save the generated
+                # # image to disk for local analysis.
+                # # Feel free to change file paths to something more
+                # # appropriate if desired.
+                # print(f"^^^^SAVING IMAGE FOR FILE TO DISK^^^")
+                # dest_dir = f"/tmp/VolcViewImages/{sector['sector']}"
+                # os.makedirs(dest_dir, exist_ok=True)
+                # dest_file = f"{self._data_type}-{band}-{self._file_date.strftime('%Y_%m_%d_%H%M%S')}.png"
+                # dest_path = os.path.join(dest_dir, dest_file)
+                # file_stream.seek(0)
+                # with open(dest_path, 'wb') as f:
+                    # f.write(file_stream.read())
+            # ###################
         else:
             logging.info("Not enough coverage to bother with")
             good = False
@@ -848,7 +854,8 @@ class DataFile:
         if len(heights) > 1:
             pool = self._mpctx.Pool(processes = len(heights),
                                     maxtasksperchild = 1,
-                                    initializer = init_logging)
+                                    initializer = init_logging,
+                                    initargs = ('/var/log/TROPOMI-Reprocess.log', ))
 
         for idx, alt in enumerate(heights):
             output_data_col = f"normalized_du_{alt}"
@@ -923,13 +930,15 @@ class DataFile:
         files = {'file': (filename, img)}
 
         return_codes = []
+        retries = []
         for request_url in config.VOLCVIEW_SERVERS:
+            upload_url = request_url + self._upload_path
             attempt_count = 0
             while attempt_count < 10:
                 attempt_count += 1
                 try:
                     img.seek(0)
-                    res = requests.post(request_url + self._upload_path,
+                    res = requests.post(upload_url,
                                         files=files,
                                         data=request_data,
                                         headers=request_headers)
@@ -944,7 +953,10 @@ class DataFile:
                               request_url)
 
             logging.info("%s %s %s %s", request_url, sector['name'], filename, res.status_code)
-            return_codes.append(res.status_code == 200)
+            success = res.status_code == 200
+            return_codes.append(success)
+            if not success:
+                retries.append((upload_url, filename, request_data))
 
         # Update the database with the last update time for this sector if all
         # servers succesfully received the image and we have a database specified
@@ -953,29 +965,49 @@ class DataFile:
             # Save this sector to the DB
             sector_time = self._file_date
             sector_name = sector['name']
-            logging.info(f"Saving last upload time of {sector_time} for sector {sector_name}")
-            CHECK_SQL = f"SELECT last_update FROM {config.DB_TABLE} WHERE sector=%s"
+            logging.info(f"Saving last upload time of {sector_time} for sector {sector_name}, {self._data_type}")
+            CHECK_SQL = f"SELECT last_update FROM {config.DB_TABLE} WHERE sector=%s AND type=%s"
 
             if DEBUG:
                 logging.info("Not saving to database as we are in debug mode")
             else:
                 SQL = f"""
-                INSERT INTO {config.DB_TABLE} (sector,last_update)
-                VALUES (%s,%s)
-                ON CONFLICT (sector) DO UPDATE
+                INSERT INTO {config.DB_TABLE} (sector,last_update,type)
+                VALUES (%s,%s,%s)
+                ON CONFLICT (sector,type) DO UPDATE
                 set last_update=EXCLUDED.last_update
                 """
                 with DBCursor() as cursor:
-                    cursor.execute(CHECK_SQL, (sector_name, ))
+                    cursor.execute(CHECK_SQL, (sector_name, self._data_type))
                     recorded_time = cursor.fetchone()
-                    if recorded_time:
-                        recorded_time = recorded_time[0]
-                        if recorded_time < sector_time:
-                            logging.info(f"Recorded time of {recorded_time} is before our time. Updating")
-                            cursor.execute(SQL, (sector_name, sector_time))
+
+                    if recorded_time is None or recorded_time[0] < sector_time:
+                        logging.info(f"Recorded time of {recorded_time} is before our time. Updating")
+                        try:
+                            cursor.execute(SQL, (sector_name, sector_time, self._data_type))
                             cursor.connection.commit()
-                        else:
-                            logging.info(f"Not updating upload time as {recorded_time}>{sector_time}")
+                        except Exception as e:
+                            logging.error(f"Unable to update DB: {e}");
+                    else:
+                        logging.info(f"Not updating upload time as {recorded_time}>{sector_time}")
+        else:
+            # One or more upload failures for this file
+            logging.warning("***Unable to upload image to volcview. Saving to retry later.***")
+
+            try:
+                failed_dir = os.path.join(config.FILE_BASE, 'failed_upload')
+                os.makedirs(failed_dir, exist_ok=True)
+                img.seek(0)
+                logging.warning(f"File size: {img.getbuffer().nbytes}")
+                with open(os.path.join(failed_dir, filename), 'wb') as f:
+                    f.write(img.getbuffer())
+
+                infoname = filename.replace('.png', '.json')
+                with open(os.path.join(failed_dir, infoname), 'wb') as f:
+                    json.dump(retries, f)
+
+            except Exception as e:
+                logging.exception(f"Unable to save out failed file info: {e}")
 
 
 def main(data_file, use_spawn=True):
@@ -994,24 +1026,24 @@ def main(data_file, use_spawn=True):
 
 
 if __name__ == "__main__":
-    init_logging()
+    init_logging('/var/log/TROPOMI-Reprocess.log')
     parser = argparse.ArgumentParser(description = "SO2 data file interface to VolcView")
     parser.add_argument("files", nargs = "*", default = [],
                         help = "SO2 data files to generate and upload VolcView images for")
+    parser.add_argument("-c", "--check", dest = "check", action='store_const',
+                        help = "Check VolcView servers for the required bands/types, creating if needed",
+                        const = True, default = False)
 
     args = parser.parse_args()
-    if not args.files:
-        print("No files specified. Nothing to do.")
+    if not args.check and not args.files:
+        print("No files specified and not checking server. Nothing to do.")
         exit(1)
 
-    for arg in args.files:
-        if os.path.isdir(arg):
-            files = Path(arg).rglob('*.[hn][5c]')
-        else:
-            files = [arg]
+    if args.check:
+        for URL in config.VOLCVIEW_SERVERS:
+            check_api(URL)
 
-        for file in files:
-            main(str(file))
+    for file in args.files:
+        main(file)
 
     exit(0)
-

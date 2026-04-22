@@ -12,7 +12,7 @@ from requests_oauthlib import OAuth2Session
 
 import shelve
 import logging
-from datetime import timedelta, date, datetime, timezone
+from datetime import timedelta, date, datetime
 from shapely import geometry
 from dateutil.parser import parse
 import numpy
@@ -130,12 +130,12 @@ def auth_sentinelhub(token_only=False):
 
     if token_only:
         return token
-    
+
     session.register_compliance_hook("access_token_response", sentinelhub_compliance_hook)
 
     return session
 
-    
+
 def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
     if not DATE_TO.endswith('Z'):
         DATE_TO += 'T00:00:00Z'
@@ -215,7 +215,7 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
         'file_url':x['assets']['data']['href'],
         'GeoFootprint': x['geometry'],
     } for x in features]
-    
+
     files.sort(key=lambda x: x['datetime'], reverse=True)
     return files, 200
 
@@ -242,8 +242,8 @@ def download():
     DATE_FROM = from_date.strftime("%Y-%m-%d")
 
     ######DEBUG - REMOVE#######
-    #DATE_FROM = "2024-03-05"
-    #DATE_TO = "2023-07-20T11:00:00Z"
+    # DATE_FROM = "2026-03-09"
+    # DATE_TO = "2023-07-20T11:00:00Z"
     ###########################
 
     logging.info(f"Searching for files from {DATE_FROM} to {DATE_TO}")
@@ -264,7 +264,7 @@ def download():
     volc_points = [geometry.Point(x['longitude'], x['latitude']) for x in volcanos]
 
     UPDATE_FILE = os.path.join(config.FILE_BASE, DEST_DIR, 'LAST_UPDATE_MARKER.txt')
-    
+
     # See documentation at https://documentation.dataspace.copernicus.eu/APIs/S3.html
     s3 = boto3.resource(
         's3',
@@ -273,8 +273,8 @@ def download():
         aws_secret_access_key=config.S3_SECRET_KEY,
         region_name='default'
     )
-    s3_bucket = s3.Bucket("eodata")    
-    
+    s3_bucket = s3.Bucket("eodata")
+
     for idx, product in enumerate(results_object):
         footprint = geometry.shape(product['GeoFootprint'])
         identifier = product['Name'].replace('.nc', '')

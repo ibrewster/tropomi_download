@@ -50,7 +50,7 @@ from GradientScale import GradientWidget
 from h5pyimport import import_product, flatten_data
 from util import init_logging
 
-DEBUG = False
+DEBUG = True
 
 class DBCursor():
     _conn = None
@@ -1054,10 +1054,26 @@ def main(data_file, use_spawn=True):
     images for any defined VolcView sectors covered by the data."""
     start = time.time()
     # Convert volcview sector definitions to our "native" format
+
     _gen_sector_bounds(config.VOLCVIEW_SECTORS)  # "converts" in-place.
 
+    SECTORS = [
+        {"sectorGroup": "1 km sectors",
+         "sectorLabel": "Kilauea",
+         "sector": "1kmHIKI",
+         "centerLat": 19.50000,
+         "centerLng": -157.25000,
+         "pixelSize": 1.00,
+         "imageHeight": 800,
+         "imageWidth": 1000,
+         "sectorId": "74"
+         },
+    ]
+
+    _gen_sector_bounds(SECTORS)
     logging.info("Generating images")
-    file_processor = DataFile(data_file)
+    file_processor = DataFile(data_file, sectors = SECTORS)
+
     file_processor.use_spawn = use_spawn
     file_processor.process_data()
     logging.info("Completed run in %d seconds", time.time() - start)
