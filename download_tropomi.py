@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+
 from urllib.parse import urlparse
 
 import boto3
@@ -266,11 +267,14 @@ def download():
     volc_points = [geometry.Point(x['longitude'], x['latitude']) for x in volcanos]
 
     UPDATE_FILE = os.path.join(config.FILE_BASE, DEST_DIR, 'LAST_UPDATE_MARKER.txt')
+
     boto_config = Config(
         read_timeout=120,
         connect_timeout=60,
         retries={'max_attempts': 10, 'mode': 'standard'}
     )
+
+    # See documentation at https://documentation.dataspace.copernicus.eu/APIs/S3.html
     s3 = boto3.resource(
         's3',
         endpoint_url='https://eodata.dataspace.copernicus.eu',
