@@ -1,37 +1,30 @@
 import os
 
-import requests
+from urllib.parse import urlparse
 
-from download_tropomi import get_file_list_sentinel_hub, download_sentinelhub, auth_sentinelhub
-from datetime import timedelta, date
+import boto3
 
-import config
-
-from util import init_logging
-
+import logging
+from datetime import datetime, timezone
+from shapely import geometry
+from dateutil.parser import parse
 import numpy
 
-from dateutil.parser import parse
-from shapely import wkt, geometry
+import config
+from util import init_logging
 
-from urllib.parse import urlencode, quote
-
-import requests
-
+from download_tropomi import get_file_list_sentinel_hub
 
 if __name__ == "__main__":
     init_logging()
     DEST_DIR = "Offline" if config.OFFLINE else "NRTI"
 
-    from_date = date.today() - timedelta(days=1)
+    from_date = datetime(2025, 10, 7, 4, 1, 41, tzinfo=timezone.utc)
 
     # Go to 00:00 tomorrow to cover through the end of today.
-    to_date = date.today() + timedelta(days=1)
-    DATE_TO = to_date.strftime("%Y-%m-%d")
-
-    # Look back 1 day to make sure we have everything
-    from_date = from_date - timedelta(days=1)
-    DATE_FROM = from_date.strftime("%Y-%m-%d")
+    to_date = datetime(2025, 10, 8, 17, 12, 58, tzinfo=timezone.utc)
+    DATE_TO = to_date.strftime("%Y-%m-%dT%H:%M:%SZ")
+    DATE_FROM = from_date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     results_object, code = get_file_list_sentinel_hub(DATE_FROM, DATE_TO)
     if results_object is None:
@@ -39,23 +32,33 @@ if __name__ == "__main__":
 
     file_count = len(results_object)
     print("Downloading %d files", file_count)
-
+    
     volcanos = numpy.asarray(config.VOLCANOS)
     volc_points = [geometry.Point(x['longitude'], x['latitude']) for x in volcanos]
 
-    # setup import params
+    UPDATE_FILE = os.path.join(config.FILE_BASE, DEST_DIR, 'LAST_UPDATE_MARKER.txt')
+    
+    s3 = boto3.resource(
+        's3',
+        endpoint_url='https://eodata.dataspace.copernicus.eu',
+        aws_access_key_id=config.S3_ACCESS_KEY,
+        aws_secret_access_key=config.S3_SECRET_KEY,
+        region_name='default'
+    )
+    s3_bucket = s3.Bucket("eodata")    
+
     for idx, product in enumerate(results_object):
         footprint = geometry.shape(product['GeoFootprint'])
+        identifier = product['Name'].replace('.nc', '')
+
         covered_volcs = [footprint.contains(x) for x in volc_points]
         covered_volcs = [x['name'] for x in volcanos[covered_volcs]]
 
-        identifier = product['Name']
-        id_parts = [x for x in identifier.split('_') if x]
-        filetime = parse(id_parts[4] + "z")
+        #id_parts = [x for x in identifier.split('_') if x]
+        filetime = parse(product['datetime'])
         year = filetime.strftime("%Y")
         month = filetime.strftime("%m")
         day = filetime.strftime("%d")
-        filedate = filetime.strftime('%Y-%m-%d')
 
         file_dir = os.path.join(config.FILE_BASE, DEST_DIR, year, month, day)
         volc_dir = os.path.join(config.FILE_BASE, DEST_DIR)
@@ -63,14 +66,21 @@ if __name__ == "__main__":
         os.makedirs(file_dir, exist_ok=True)
         file_name = os.path.join(file_dir, identifier)
         if os.path.exists(file_name + ".nc") or os.path.exists(file_name + ".skipped"):
-            print("Skipping %s, we already have it.", file_name)
+            logging.info("Skipping %s, we already have it.", file_name)
             continue
 
-        uuid = product['Id']
+        logging.info("Downloading %s (%d/%d)", file_name, idx + 1, file_count)
 
-        print("Downloading %s (%d/%d)", file_name, idx + 1, file_count)
-
-        download_sentinelhub(file_name.replace('.nc', ''), uuid)
+        s3_url = product['file_url']
+        s3_parsed = urlparse(s3_url, allow_fragments=True)
+        key = s3_parsed.path.lstrip('/')
+        s3_file = f"{key}/{product['Name']}"
+        download_name = file_name + ".download"
+        try:
+            s3_bucket.download_file(s3_file, download_name)
+        except Exception as e:
+            logging.exception(f"Unable to download file: {e}")
+            continue
 
         # # Try to import the file to see if we have any valid data
         # print("Checking file for good data")
@@ -124,8 +134,5 @@ if __name__ == "__main__":
         # # Generate volc view images
         # if len(sys.argv) < 2 or not sys.argv[1] == "--no-volcview":
         # sendVolcView(f"{file_name}.nc")
-
-    with shelve.open(cache_location) as cache:
-        cache['lastRun'] = date.today()
 
     print("Download process complete")

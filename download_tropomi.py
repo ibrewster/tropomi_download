@@ -1,9 +1,7 @@
 import os
 import sys
 import json
-import zipfile
 
-from io import BytesIO
 from urllib.parse import urlparse
 
 import boto3
@@ -267,6 +265,7 @@ def download():
 
     UPDATE_FILE = os.path.join(config.FILE_BASE, DEST_DIR, 'LAST_UPDATE_MARKER.txt')
     
+    # See documentation at https://documentation.dataspace.copernicus.eu/APIs/S3.html
     s3 = boto3.resource(
         's3',
         endpoint_url='https://eodata.dataspace.copernicus.eu',
