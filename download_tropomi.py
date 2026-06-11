@@ -205,7 +205,7 @@ def get_file_list_sentinel_hub(DATE_FROM, DATE_TO):
 
         next_val = results_object['context'].get('next', -1)
         next_val=int(next_val)
-        print(f"Next Val: {next_val} of type: {type(next_val)}")
+        #print(f"Next Val: {next_val} of type: {type(next_val)}")
         if next_val < 0:
             done = True
         else:
