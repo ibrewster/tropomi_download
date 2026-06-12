@@ -111,7 +111,7 @@ def auth_sentinelhub(token_only=False):
         with open(token_path, 'r') as f:
             token = json.load(f)
 
-        expires = datetime.utcfromtimestamp(token['expires_at'])
+        expires = datetime.fromtimestamp(token['expires_at'], tz=UTC)
         valid_time = round((expires - datetime.now(UTC)).total_seconds() / 60, 2)
         logging.info(f"Loaded token will expire in {valid_time} minutes")
         if valid_time < 2:
