@@ -15,7 +15,7 @@ from requests_oauthlib import OAuth2Session
 
 import shelve
 import logging
-from datetime import timedelta, date, datetime
+from datetime import timedelta, date, datetime, UTC
 from shapely import geometry
 from dateutil.parser import parse
 import numpy
@@ -46,14 +46,14 @@ def sentinelhub_compliance_hook(response):
         # except KeyError:
             # expires = datetime.min
 
-        # if expires < datetime.utcnow():
+        # if expires < datetime.now(UTC):
             # #token has expired. See if we can refresh
             # try:
                 # refresh_expires = datetime.utcfromtimestamp(token['refresh_expires_at'])
             # except KeyError:
                 # refresh_expires = datetime.min #can't get the refresh expiration date
 
-            # if refresh_expires > datetime.utcnow():
+            # if refresh_expires > datetime.now(UTC):
                 # refresh = True
             # else:
                 # token = None
@@ -112,7 +112,7 @@ def auth_sentinelhub(token_only=False):
             token = json.load(f)
 
         expires = datetime.utcfromtimestamp(token['expires_at'])
-        valid_time = round((expires - datetime.utcnow()).total_seconds() / 60, 2)
+        valid_time = round((expires - datetime.now(UTC)).total_seconds() / 60, 2)
         logging.info(f"Loaded token will expire in {valid_time} minutes")
         if valid_time < 2:
             token = None #token has expired, or will soon. Get rid of it.
