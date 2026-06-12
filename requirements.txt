@@ -16,3 +16,4 @@ zarr
 h5py
 paho-mqtt
 pystac-client
+boto3
