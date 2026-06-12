@@ -284,7 +284,7 @@ def save_sector_mass(sector, img_date, alt, url):
     with DBCursor() as cursor:
         cursor.execute(
             SQL,
-            (sector['name'], img_date, float(sector['mass']), float(alt_lookup[alt]), url)
+            (sector['name'], img_date, float(sector['mass']), alt_lookup[alt], url)
         )
         cursor.connection.commit()
 
