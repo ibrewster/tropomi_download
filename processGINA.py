@@ -22,7 +22,7 @@ logging.basicConfig(filename=ginaConfig.LOG_FILE,
 
 SRC_PATH = '/gina_root/upload'
 
-executor = ThreadPoolExecutor(max_workers=1)
+executor = ThreadPoolExecutor(max_workers=3)
 
 
 def future_complete(filename, future):
