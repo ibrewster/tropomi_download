@@ -37,7 +37,7 @@ def _get_new_row(row, altrow, idx):
 def _make_bounds(points):
     if points.min() < -360:
         # We have a fill value. Replace with NaN
-        points[points == points.min()] = numpy.NaN
+        points[points == points.min()] = numpy.nan
 
     ll = numpy.roll(points, (-1, 1), axis = (0, 1))
     lr = numpy.roll(points, (-1, - 1), axis = (0, 1))
