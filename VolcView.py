@@ -585,8 +585,7 @@ class DataFile:
         is_grey = numpy.all(as_array == 238, axis=2)
         # number that is False is non-grey, or covered, pixels
         # Not quite true due to scale bar, borders, etc.
-        unique, counts = numpy.unique(is_grey, return_counts=True)
-        non_grey = dict(zip(unique, counts))[False]
+        non_grey = numpy.count_nonzero(~is_grey)
 
         covered_percent = non_grey / total_count
 
