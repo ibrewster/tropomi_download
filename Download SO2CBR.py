@@ -174,51 +174,51 @@ def get_alaska_products(date_from, date_to):
 
 if __name__ == "__main__":
 
-    dates = [
-        "2020-01-07T23:51:08",
-        "2020-01-19T23:26:08",
-        "2021-03-02T22:33:24",
-        "2020-03-16T00:13:50",
-        "2021-03-26T23:26:09",
-        "2020-04-01T00:13:50",
-        "2020-04-19T23:19:48",
-        "2020-04-23T23:44:48",
-        "2020-04-24T23:24:48",
-        "2020-05-05T23:16:39",
-        "2018-05-05T22:25:05",
-        "2022-05-18T00:46:28",
-        "2020-06-04T00:13:18",
-        "2020-06-08T00:38:52",
-        "2020-06-09T00:18:52",
-        "2020-06-17T01:12:32",
-        "2020-06-18T00:53:31",
-        "2020-06-20T00:13:31",
-        "2020-07-06T23:54:08",
-        "2020-07-19T23:13:02",
-        "2023-07-24T00:49:02",
-        "2020-07-26T00:38:16",
-        "2023-08-26T00:29:49",
-        "2023-09-06T00:22:30",
-        "2018-09-25T22:39:11",
-        "2023-09-26T22:47:30",
-        "2023-10-04T23:37:08",
-        "2020-10-26T00:13:39",
-    ]
+    # dates = [
+    #     "2020-01-07T23:51:08",
+    #     "2020-01-19T23:26:08",
+    #     "2021-03-02T22:33:24",
+    #     "2020-03-16T00:13:50",
+    #     "2021-03-26T23:26:09",
+    #     "2020-04-01T00:13:50",
+    #     "2020-04-19T23:19:48",
+    #     "2020-04-23T23:44:48",
+    #     "2020-04-24T23:24:48",
+    #     "2020-05-05T23:16:39",
+    #     "2018-05-05T22:25:05",
+    #     "2022-05-18T00:46:28",
+    #     "2020-06-04T00:13:18",
+    #     "2020-06-08T00:38:52",
+    #     "2020-06-09T00:18:52",
+    #     "2020-06-17T01:12:32",
+    #     "2020-06-18T00:53:31",
+    #     "2020-06-20T00:13:31",
+    #     "2020-07-06T23:54:08",
+    #     "2020-07-19T23:13:02",
+    #     "2023-07-24T00:49:02",
+    #     "2020-07-26T00:38:16",
+    #     "2023-08-26T00:29:49",
+    #     "2023-09-06T00:22:30",
+    #     "2018-09-25T22:39:11",
+    #     "2023-09-26T22:47:30",
+    #     "2023-10-04T23:37:08",
+    #     "2020-10-26T00:13:39",
+    # ]
+    #
+    # for date_str in dates:
+    #     date_obj = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S")
+    #     print("Getting data products for", date_obj)
+    #     start_date = date_obj.replace(hour=0, minute=0, second=0, microsecond=0)
+    #     end_date = date_obj.replace(hour=23, minute=59, second=59, microsecond=999999)
+    #     get_alaska_products(start_date, end_date)
 
-    for date_str in dates:
-        date_obj = datetime.strptime(date_str, "%Y-%m-%dT%H:%M:%S")
-        print("Getting data products for", date_obj)
-        start_date = date_obj.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = date_obj.replace(hour=23, minute=59, second=59, microsecond=999999)
-        get_alaska_products(start_date, end_date)
-
-    #period = 30
-    #end = datetime.now()
-    #start = end - timedelta(days = period)
-    #while start >= datetime(2022, 7, 19):
-    #    print("Getting data products for", start, " - ", end)
-    #    get_alaska_products(start, end)
-    #    end = start - timedelta(minutes = 1)
-    #    start = end -timedelta(days = period)
+    end = datetime(2021, 1, 1)
+    period = 30
+    start = end - timedelta(days = period)
+    while start >= datetime(2019, 12, 31):
+       print(f"Getting data products for {start} - {end}")
+       get_alaska_products(start, end)
+       end = start - timedelta(minutes = 1)
+       start = end -timedelta(days = period)
 
 
