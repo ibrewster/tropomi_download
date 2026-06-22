@@ -114,19 +114,20 @@ def get_alaska_products(date_from, date_to):
 
     multipoly = shapely.geometry.MultiPolygon(footprints)
 
-    items = ItemSearch(
+    search = ItemSearch(
         endpoint,
-        #sortby="-start_datetime",
+        sortby="-start_datetime",
         collections = ["sentinel-5p-l2-so2-rpro"],
         datetime = [date_from, date_to],
         intersects = multipoly
-    ).items()
+    )
+    total_matched=search.matched()
+    items=search.items()
 
+    print(f"Downloading approximately {total_matched} files")
 
-    items = sorted(items, key = lambda item: item.properties['start_datetime'], reverse = True)
-    print("Found",len(items),"to download")
-
-    for item in items:
+    cobra_items = (item for item in items if "_020700_" in item.id or "_020800_" in item.id)
+    for item in cobra_items:
         # print("Assets:", item.assets)
         filename = f"{item.id}.nc"
         #product_hash = item.properties["hash"]
