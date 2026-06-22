@@ -213,7 +213,7 @@ if __name__ == "__main__":
     #     get_alaska_products(start_date, end_date)
 
     end = datetime(2021, 1, 1)
-    period = 30
+    period = 7
     start = end - timedelta(days = period)
     while start >= datetime(2019, 12, 31):
        print(f"Getting data products for {start} - {end}")
