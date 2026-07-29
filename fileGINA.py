@@ -13,7 +13,7 @@ FILE_PATH = os.path.dirname(__file__)
 logging.basicConfig(filename=ginaConfig.LOG_FILE,
                     level=logging.INFO,
                     datefmt='%Y-%m-%d %H:%M:%S',
-                    format='%(asctime)s GINA-%(levelname)s: %(message)s'
+                    format='%(asctime)s INCRON-%(levelname)s: %(message)s'
                     )
 
 
