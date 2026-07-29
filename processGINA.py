@@ -22,6 +22,7 @@ logging.basicConfig(filename=ginaConfig.LOG_FILE,
 
 SRC_PATH = '/gina_root/upload'
 FAILED_DIR = '/gina_root/_failed'
+in_work=set()
 
 executor = ThreadPoolExecutor(max_workers=3)
 
@@ -38,6 +39,7 @@ def future_complete(filename, dest_file, future):
         return
 
     file_file(filename, dest_file)
+    in_work.remove(filename)
 
 
 def file_file(filename: str, dest: str) -> bool:
@@ -69,6 +71,9 @@ def on_message(client, userdata, message):
         logging.info("Received message to process %s", file)
 
         file_name = os.path.basename(file)
+        if file_name in in_work:
+            logging.warning("Skipping file due to already in work")
+            return
 
         if not file_name.endswith('.h5') or not os.path.isfile(file):
             logging.info("Skipping file due to not supported issue")
@@ -100,6 +105,7 @@ def on_message(client, userdata, message):
             future = executor.submit(gen_volc_view, file)
             complete_callback = partial(future_complete, file_name, dest_file)
             future.add_done_callback(complete_callback)
+            in_work.add(file_name)
         except Exception:
             logging.exception(f"An exception occurred while processing {file_name}")
     except Exception:
