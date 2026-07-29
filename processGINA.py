@@ -43,11 +43,7 @@ def future_complete(filename, dest_file, future):
 
 
 def file_file(filename: str, dest: str) -> bool:
-    logging.info(
-        "Filing %s in %s",
-        f"{SRC_PATH}/{filename}",
-        dest
-    )
+    logging.info("Filing %s in %s",filename,os.path.dirname(dest))
     try:
         shutil.move(f"{SRC_PATH}/{filename}", dest)
     except Exception:
