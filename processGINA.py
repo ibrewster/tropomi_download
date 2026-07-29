@@ -36,6 +36,7 @@ def future_complete(filename, dest_file, future):
         failed_dest=f"{FAILED_DIR}/{filename}"
         os.makedirs(FAILED_DIR, exist_ok=True)
         file_file(filename, failed_dest)
+        in_work.remove(filename)
         return
 
     file_file(filename, dest_file)
@@ -103,9 +104,9 @@ def on_message(client, userdata, message):
         logging.info("Generating volc view images")
         try:
             future = executor.submit(gen_volc_view, file)
+            in_work.add(file_name)
             complete_callback = partial(future_complete, file_name, dest_file)
             future.add_done_callback(complete_callback)
-            in_work.add(file_name)
         except Exception:
             logging.exception(f"An exception occurred while processing {file_name}")
     except Exception:
