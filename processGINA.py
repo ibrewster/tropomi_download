@@ -36,11 +36,10 @@ def future_complete(filename, dest_file, future):
         failed_dest=f"{FAILED_DIR}/{filename}"
         os.makedirs(FAILED_DIR, exist_ok=True)
         file_file(filename, failed_dest)
-        in_work.remove(filename)
-        return
-
-    file_file(filename, dest_file)
-    in_work.remove(filename)
+    else:
+        file_file(filename, dest_file)
+    finally:
+        in_work.discard(filename)
 
 
 def file_file(filename: str, dest: str) -> bool:
