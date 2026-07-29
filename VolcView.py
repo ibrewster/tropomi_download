@@ -293,7 +293,7 @@ class DataFile:
     _data = None
     _du_val = None
     _normalized_du = None
-    _bands = ('LowTrop', 'MidTrop')
+    _bands: tuple[str,...] = ('LowTrop', 'MidTrop')
     _request_url = 'https://volcview.wr.usgs.gov/vv-api/'
     _anc_request_url = 'https://avo-volcview.wr.usgs.gov/vv-api/'
     # _request_url = 'https://binarycascade.com/projects/vv-api/'
@@ -348,6 +348,8 @@ class DataFile:
             self._bands = ('SO2', )
             file_date_info = self._file_name[1:14]
             file_date = datetime.strptime(file_date_info, '%Y%j%H%M%S')
+        else:
+            raise ValueError(f"Unknown file name format: {self._file_name}")
 
 
         self._file_date = file_date.replace(tzinfo =pytz.UTC)

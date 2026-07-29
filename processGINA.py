@@ -21,6 +21,7 @@ logging.basicConfig(filename=ginaConfig.LOG_FILE,
                     )
 
 SRC_PATH = '/gina_root/upload'
+FAILED_DIR = '/gina_root/_failed'
 
 executor = ThreadPoolExecutor(max_workers=3)
 
@@ -30,7 +31,11 @@ def future_complete(filename, dest_file, future):
         result = future.result()
         logging.info(f"Completed processing of {filename} with return value {result}")
     except Exception:
-        logging.exception("An exception occurred while processing file")
+        logging.exception(f"An exception occurred while processing file {filename}")
+        failed_dest=f"{FAILED_DIR}/{filename}"
+        os.makedirs(FAILED_DIR, exist_ok=True)
+        file_file(filename, failed_dest)
+        return
 
     file_file(filename, dest_file)
 
