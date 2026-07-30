@@ -190,7 +190,7 @@ def _load_file_data(file_def, filepath, fields: tuple = _REQUIRED_FIELDS):
 
         path = f"{group}/{spec['NAME']}"
         try:
-            field_data = numpy.asarray(h5_file[path]).squeeze()
+            field_data = h5_file[path][...].squeeze()
         except (KeyError, OSError) as e:
             logging.error(f"Unable to load field {path} due to error: {e}")
             continue # Key not in file, or unable to read data.
@@ -221,6 +221,7 @@ def _load_file_data(file_def, filepath, fields: tuple = _REQUIRED_FIELDS):
         else:
             file_xa[field] = (dim, field_data)
 
+    h5_file.close()
     return file_xa
 
 
@@ -418,6 +419,9 @@ class NetCDFFile:
             del self._file_data
             self._file_data = None
             gc.collect()
+
+        if self._file_def is None:
+            return None
 
         # Parse out the options
         if options is None:

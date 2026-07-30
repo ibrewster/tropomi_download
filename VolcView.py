@@ -375,7 +375,6 @@ class DataFile:
         logging.info(f"Beginning data load for {self._file_name}")
         self._load_data()
 
-
         try:
             if not self._data or not self._data['latitude'].any():
                 raise TypeError("Missing Data")
