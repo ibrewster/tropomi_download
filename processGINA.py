@@ -1,6 +1,6 @@
 #!/shared/apps/so2_processing/env/bin/python
 from functools import partial
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 
 import ginaConfig
 
@@ -24,7 +24,7 @@ SRC_PATH = '/gina_root/upload'
 FAILED_DIR = '/gina_root/_failed'
 in_work=set()
 
-executor = ThreadPoolExecutor(max_workers=3)
+executor = ProcessPoolExecutor(max_workers=3, max_tasks_per_child=1)
 
 
 def future_complete(filename, dest_file, future):
