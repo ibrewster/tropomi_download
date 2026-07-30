@@ -1,4 +1,4 @@
-#!/shared/apps/so2_processing/env/bin/python
+#!/shared/apps/so2_processing/env/bin/python -u
 import multiprocessing as mp
 
 from functools import partial
@@ -24,7 +24,6 @@ logging.basicConfig(filename=ginaConfig.LOG_FILE,
 
 SRC_PATH = '/gina_root/upload'
 FAILED_DIR = '/gina_root/_failed'
-in_work=set()
 
 ctx = mp.get_context("spawn")
 executor = ProcessPoolExecutor(max_workers=3, max_tasks_per_child=1, mp_context=ctx)
@@ -125,6 +124,7 @@ def on_disconnect(client, userdata, rc):
 
 
 if __name__ == "__main__":
+    in_work = set()
     mqtt_client = mqtt.Client(client_id="gina_processing", clean_session=False)
     mqtt_client.on_message = on_message
     mqtt_client.on_connect = on_connect
