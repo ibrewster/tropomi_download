@@ -1,4 +1,6 @@
 #!/shared/apps/so2_processing/env/bin/python
+import multiprocessing as mp
+
 from functools import partial
 from concurrent.futures import ProcessPoolExecutor
 
@@ -24,7 +26,8 @@ SRC_PATH = '/gina_root/upload'
 FAILED_DIR = '/gina_root/_failed'
 in_work=set()
 
-executor = ProcessPoolExecutor(max_workers=3, max_tasks_per_child=1)
+ctx = mp.get_context("spawn")
+executor = ProcessPoolExecutor(max_workers=3, max_tasks_per_child=1, mp_context=ctx)
 
 
 def future_complete(filename, dest_file, future):
@@ -66,7 +69,7 @@ def on_message(client, userdata, message):
         file = message.payload.decode()
         logging.info("Received message to process %s", file)
 
-        file_name = os.path.basename(file)
+        file_name:str = os.path.basename(file)
         if file_name in in_work:
             logging.warning("Skipping file due to already in work")
             return
@@ -86,7 +89,7 @@ def on_message(client, userdata, message):
             logging.debug("Detected OMPS file")
             file_parts = file_name.split('_')
             date_part = file_parts[3]
-            date_format = '%Ym%m%dt%H%M%S'
+            date_format = "%Ym%m%dt%H%M%S"
             dest_path = ginaConfig.OMPS_DEST_DIR
 
         file_time = datetime.strptime(date_part, date_format)
