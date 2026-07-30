@@ -16,17 +16,27 @@ from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
 
-logging.basicConfig(filename=ginaConfig.LOG_FILE,
-                    level=logging.INFO,
-                    datefmt='%Y-%m-%d %H:%M:%S',
-                    format='%(asctime)s GINA-%(levelname)s: %(message)s'
-                    )
+def init_logging():
+    logging.basicConfig(
+        filename=ginaConfig.LOG_FILE,
+        level=logging.INFO,
+        datefmt='%Y-%m-%d %H:%M:%S',
+        format='%(asctime)s GINA-%(levelname)s: %(message)s',
+        force=True
+    )
+
+init_logging()
 
 SRC_PATH = '/gina_root/upload'
 FAILED_DIR = '/gina_root/_failed'
 
 ctx = mp.get_context("spawn")
-executor = ProcessPoolExecutor(max_workers=3, max_tasks_per_child=1, mp_context=ctx)
+executor = ProcessPoolExecutor(
+    max_workers=3,
+    max_tasks_per_child=1,
+    mp_context=ctx,
+    initializer=init_logging
+)
 
 
 def future_complete(filename, dest_file, future):
