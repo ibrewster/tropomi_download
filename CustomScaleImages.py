@@ -281,7 +281,7 @@ class DataFile:
     _percentile_levels = (90, 95, 97, 99, 100)
     _satelite = ''
     _scale_start = 0
-    _scale_stop = 10
+    _scale_stop = 20
 
     def __init__(self, data_file, sectors = config.VOLCVIEW_SECTORS):
         # Check some values
@@ -642,7 +642,7 @@ class DataFile:
             # Save an archive image
             logging.debug("Saving archive image for %s", band)
             filename = f"{self._file_date.strftime('%Y_%m_%d_%H%M%S')}-{band}-{self._data_type}.png"
-            save_file = os.path.join(config.FILE_BASE, f'VolcView {self._scale_start}-{self._scale_stop}', sector['name'],
+            save_file = os.path.join(config.FILE_BASE, f'VolcView COBRA {self._scale_start}-{self._scale_stop}', sector['name'],
                                      self._file_date.strftime('%Y'),
                                      self._file_date.strftime('%m'),
                                      filename)

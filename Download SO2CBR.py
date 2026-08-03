@@ -213,7 +213,7 @@ if __name__ == "__main__":
     #     end_date = date_obj.replace(hour=23, minute=59, second=59, microsecond=999999)
     #     get_alaska_products(start_date, end_date)
 
-    end = datetime(2021, 1, 1)
+    end = datetime(2020, 8, 1)
     period = 7
     start = end - timedelta(days = period)
     while start >= datetime(2019, 12, 31):
