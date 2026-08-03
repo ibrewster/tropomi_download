@@ -34,30 +34,6 @@ def worker_init(queue):
 SRC_PATH = '/gina_root/upload'
 FAILED_DIR = '/gina_root/_failed'
 
-ctx = mp.get_context("spawn")
-m = ctx.Manager()
-log_queue = m.Queue()
-
-file_handler = logging.FileHandler(ginaConfig.LOG_FILE)
-file_handler.setLevel(logging.INFO)
-file_handler.setFormatter(logging.Formatter('%(asctime)s GINA [%(processName)s] - %(levelname)s: %(message)s'))
-
-main_logger = logging.getLogger()
-main_logger.setLevel(logging.INFO)
-main_logger.handlers.clear()
-main_logger.addHandler(file_handler)
-
-listener=QueueListener(log_queue, file_handler)
-listener.start()
-
-executor = ProcessPoolExecutor(
-    max_workers=3,
-    max_tasks_per_child=1,
-    mp_context=ctx,
-    initializer = worker_init,
-    initargs=(log_queue,)
-)
-
 
 def future_complete(filename, dest_file, future):
     try:
@@ -154,6 +130,31 @@ def on_disconnect(client, userdata, rc):
 
 
 if __name__ == "__main__":
+    ctx = mp.get_context("spawn")
+    m = ctx.Manager()
+    log_queue = m.Queue()
+
+    file_handler = logging.FileHandler(ginaConfig.LOG_FILE)
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(logging.Formatter('%(asctime)s GINA [%(processName)s] - %(levelname)s: %(message)s'))
+
+    main_logger = logging.getLogger()
+    main_logger.setLevel(logging.INFO)
+    main_logger.handlers.clear()
+    main_logger.addHandler(file_handler)
+
+    listener = QueueListener(log_queue, file_handler)
+    listener.start()
+
+    executor = ProcessPoolExecutor(
+        max_workers=3,
+        max_tasks_per_child=1,
+        mp_context=ctx,
+        initializer=worker_init,
+        initargs=(log_queue,)
+    )
+
+
     in_work = set()
     mqtt_client = mqtt.Client(client_id="gina_processing", clean_session=False)
     mqtt_client.on_message = on_message
