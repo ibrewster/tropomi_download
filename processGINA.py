@@ -13,29 +13,49 @@ import os
 import shutil
 
 from datetime import datetime, timezone
+from logging.handlers import QueueHandler, QueueListener
 
 import paho.mqtt.client as mqtt
 
-def init_logging():
-    logging.basicConfig(
-        filename=ginaConfig.LOG_FILE,
-        level=logging.INFO,
-        datefmt='%Y-%m-%d %H:%M:%S',
-        format='%(asctime)s GINA-%(levelname)s: %(message)s',
-        force=True
-    )
 
-init_logging()
+def worker_init(queue):
+    """
+    Initializer for each worker process in the pool.
+    Replaces basicConfig with a fast, thread/process-safe QueueHandler.
+    """
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()  # Remove default handlers
+
+    # Send all log records to the central queue in RAM
+    queue_handler = QueueHandler(queue)
+    logger.addHandler(queue_handler)
 
 SRC_PATH = '/gina_root/upload'
 FAILED_DIR = '/gina_root/_failed'
 
 ctx = mp.get_context("spawn")
+m = ctx.Manager()
+log_queue = m.Queue()
+
+file_handler = logging.FileHandler(ginaConfig.LOG_FILE)
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(logging.Formatter('%(asctime)s GINA [%(processName)s] - %(levelname)s: %(message)s'))
+
+main_logger = logging.getLogger()
+main_logger.setLevel(logging.INFO)
+main_logger.handlers.clear()
+main_logger.addHandler(file_handler)
+
+listener=QueueListener(log_queue, file_handler)
+listener.start()
+
 executor = ProcessPoolExecutor(
     max_workers=3,
     max_tasks_per_child=1,
     mp_context=ctx,
-    initializer=init_logging
+    initializer = worker_init,
+    initargs=(log_queue,)
 )
 
 
