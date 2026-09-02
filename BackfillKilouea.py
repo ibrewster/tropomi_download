@@ -281,10 +281,19 @@ def save_sector_mass(sector, img_date, alt, url):
     """
     print(f"Saving  mass for sector {sector['name']}")
 
+    # psycopg2 does not know how to adapt NumPy scalar values.  Normalize
+    # every value passed to the query while leaving the datetime object in
+    # its native form so psycopg2 can adapt it as a timestamptz.
+    sector_name = str(sector['name'])
+    record_date = img_date.item() if isinstance(img_date, numpy.generic) else img_date
+    record_value = float(sector['mass'])
+    altitude = alt_lookup[alt]
+    image_url = str(url)
+
     with DBCursor() as cursor:
         cursor.execute(
             SQL,
-            (sector['name'], img_date, sector['mass'], alt_lookup[alt], url)
+            (sector_name, record_date, record_value, altitude, image_url)
         )
         cursor.connection.commit()
 
@@ -372,7 +381,6 @@ class DataFile:
     def process_data(self):
         logging.info(f"Beginning data load for {self._file_name}")
         self._load_data()
-
 
         try:
             if not self._data or not self._data['latitude'].any():
